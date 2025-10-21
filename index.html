@@ -1,0 +1,1767 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gradient Brush</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&display=swap');
+    :root{color-scheme:dark}
+    html,body{height:100%;margin:0;background:#000}
+    #wrap{display:grid;grid-template-columns:311px 1fr;gap:0;height:100%;padding:0}
+    
+    /* === MENU (PIXEL-PERFECT) === */
+    #ui{
+      display:flex;flex-direction:column;gap:0;align-items:stretch;
+      color:#fff;padding:32px;background:#000;overflow-y:auto;position:relative;
+      font:14px/1.3 'Archivo',system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      text-transform:uppercase;
+    }
+    .section-title{font-size:24px;line-height:28px;text-align:center;letter-spacing:.02em;font-weight:600;color:#fff;margin:0 0 24px}
+    
+    .color-row{display:flex;gap:24px;margin-bottom:16px}
+    #ui input[type="color"]{appearance:none;border:0;background:none;width:64px;height:22px;padding:0;border-radius:4px;cursor:pointer}
+    
+    .checkbox-row{display:flex;align-items:center;gap:10px;margin:12px 0 24px}
+    #ui input[type="checkbox"]{appearance:none;width:16px;height:16px;border:1px solid #D9D9D9;background:transparent;cursor:pointer}
+    #ui input[type="checkbox"]:checked{background:#D9D9D9}
+    
+    .range{display:block;margin:8px 0 16px}
+    #ui input[type="range"]{appearance:none;width:100%;height:6px;background:#D9D9D9;border:0;cursor:pointer}
+    #ui input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;background:#CFCFCF;border-radius:3px;border:1px solid #CFCFCF;margin-top:-5px}
+    #ui input[type="range"]::-moz-range-thumb{width:16px;height:16px;background:#CFCFCF;border:none;border-radius:3px}
+    
+    .btn-row{display:flex;gap:12px;margin:12px 0}
+    .btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border:1px solid #D9D9D9;background:transparent;color:#D9D9D9;cursor:pointer;font:14px/1 'Archivo',system-ui;text-transform:uppercase}
+    .btn svg{display:block}
+    .btn:hover{background:#111}
+    .file-upload-wrapper{display:inline-flex}
+    .file-upload-button{all:unset}
+    .file-upload-button{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border:1px solid #D9D9D9;color:#D9D9D9;cursor:pointer;text-transform:uppercase}
+    .file-upload-button:hover{background:#111}
+    
+    /* UNDO: единый вид + размер */
+    .btn-undo{
+      width:100%;
+      height:40px;
+      padding:0 18px;
+      border:1px solid #D9D9D9;
+      display:flex; align-items:center; gap:8px;
+      color:#D9D9D9; background:transparent; text-transform:uppercase;
+      cursor:pointer;
+      font:14px/1 'Archivo',system-ui;
+      margin:8px 0 24px;
+    }
+    .btn-undo svg{
+      width:16px; height:16px; stroke:#D9D9D9; stroke-width:1.5;
+      vector-effect:non-scaling-stroke; stroke-linecap:square; stroke-linejoin:miter;
+      fill:none;
+    }
+    .btn-undo:hover{background:#111}
+    
+    .photomaker{margin-top:24px}
+    .lab{display:block;margin:16px 0 6px;letter-spacing:.08em}
+    
+    .btn-download{
+      width:100%;height:56px;margin-top:24px;border:1px solid #D9D9D9;border-radius:0;
+      background:transparent;
+      color:#D9D9D9;font-weight:400;cursor:pointer;display:flex;align-items:center;justify-content:center;text-transform:uppercase;
+      font:14px/1 'Archivo',system-ui;
+    }
+    .btn-download:hover{background:#111}
+    
+    /* Design overlay (dev helper) */
+    #designOverlay{position:absolute;inset:0;z-index:9999;pointer-events:none;background-repeat:no-repeat;background-position:top center;background-size:100% auto;opacity:0.5;display:none}
+    
+    #stage{
+      position:relative;
+      width:100%;
+      height:100%;
+    }
+    #stage canvas#gl{
+      display:block;
+      width:100%;
+      height:100%;
+      background:#000;
+    }
+    #photoLayer{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      pointer-events:none;
+      z-index:1;
+    }
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <div id="ui">
+    <div id="designOverlay"></div>
+    
+    <div class="section-title">PAINTER</div>
+
+    <div class="color-row">
+      <input id="cTop" type="color" value="#EA489E"/>
+      <input id="cMid" type="color" value="#E9F754"/>
+      <input id="cBot" type="color" value="#233FF5"/>
+    </div>
+
+    <label class="range">
+      <input id="midPos" type="range" min="0" max="1" step="0.001" value="0.5"/>
+    </label>
+
+    <div class="checkbox-row">
+      <input id="grain" type="checkbox" checked/>
+      <label>GRAIN</label>
+    </div>
+
+    <!-- Unified button row: 4 equal buttons -->
+    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 24px">
+      <label class="file-upload-wrapper" style="margin:0">
+        <input type="file" id="svgInput" accept=".svg" hidden>
+        <span class="file-upload-button" style="width:100%;justify-content:center;font-size:13px;padding:0 8px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+            <path d="M12 3v12M6 9l6-6 6 6"/><path d="M4 21h16"/>
+          </svg>
+          UPLOAD SVG
+        </span>
+      </label>
+
+      <label class="file-upload-wrapper" style="margin:0">
+      <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.gif,.webp" hidden>
+        <span class="file-upload-button" style="width:100%;justify-content:center;font-size:13px;padding:0 8px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+            <path d="M12 3v12M6 9l6-6 6 6"/><path d="M4 21h16"/>
+          </svg>
+          UPLOAD PHOTO
+        </span>
+      </label>
+
+      <button class="btn btn-undo" style="margin:0;width:100%;min-width:0;justify-content:center;gap:6px;font-size:13px;padding:0 8px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+          <path d="M9 7L4 12L9 17"/>
+          <path d="M20 12H5"/>
+        </svg>
+        UNDO
+      </button>
+
+      <button id="clear" class="btn" style="width:100%;justify-content:center;gap:6px;font-size:13px;padding:0 8px">
+        RESET
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="photomakerSection" class="photomaker hidden">
+      <label class="lab" style="margin-top:24px">PHOTO STYLE</label>
+      <select id="patternSelect" class="btn" style="width:100%;height:40px;padding:0 12px;text-transform:none;color:#000;background:#fff;border-color:#D9D9D9;margin:8px 0 16px">
+        <option value="dots">Halftone (dots)</option>
+        <option value="displace">Displace (3D)</option>
+        <option value="weave">Lines</option>
+        <option value="shapes">Abstract</option>
+        <option value="ascii">Signs</option>
+        <option value="gradient">Gradient</option>
+        <option value="dispersion">Dispersion</option>
+      </select>
+
+      <label class="lab">SIZE</label>
+      <label class="range"><input id="patternSize" type="range" min="5" max="50" value="20"/></label>
+
+      <label class="lab">STRENGTH</label>
+      <label class="range"><input id="detailLevel" type="range" min="10" max="90" value="50"/></label>
+
+      <div class="checkbox-row" style="margin:16px 0 8px">
+        <input id="invertPattern" type="checkbox"/>
+        <label>INVERT</label>
+      </div>
+    </div>
+
+    <button id="download" class="btn-download">DOWNLOAD PNG</button>
+  </div>
+  <div id="stage"><canvas id="gl"></canvas></div>
+</div>
+
+<script>
+(function(){
+  const $ = (q)=>document.querySelector(q);
+  const canvas = $('#gl');
+  const stage = document.getElementById('stage');
+  const dpi = Math.min(devicePixelRatio||1, 2);
+
+  const gl = canvas.getContext('webgl', {antialias:false,preserveDrawingBuffer:true});
+  if (!gl) { alert('WebGL не поддерживается'); return; }
+
+  const extTexFloat = gl.getExtension('OES_texture_float');
+  const extTexFloatLin = gl.getExtension('OES_texture_float_linear');
+  const extColorFloat = gl.getExtension('WEBGL_color_buffer_float');
+  if (!extTexFloat || !extColorFloat) {
+    alert('Нужно: OES_texture_float и WEBGL_color_buffer_float');
+    return;
+  }
+
+  const VERT = `
+  attribute vec2 aPos;
+  varying vec2 vTexCoord;
+  void main(){
+    vTexCoord = aPos*0.5+0.5;
+    gl_Position = vec4(aPos,0.0,1.0);
+  }`;
+
+  const FRAG_DATA = `
+  precision highp float;
+  varying vec2 vTexCoord;
+  uniform sampler2D u_prevState;
+  uniform vec3  u_ptA;
+  uniform vec3  u_ptB;
+  uniform float u_colorIndex;
+  uniform vec2  u_res;
+
+  vec2 pointOnLineWithX(float x, vec2 a, vec2 b) {
+     float m = (b.y - a.y) / (b.x - a.x + 1e-6);
+     float y = m * (x - a.x) + a.y;
+     return vec2(x, y);
+  }
+
+  void main(){
+    vec2 pix = vTexCoord;
+    vec2 a = u_ptA.xy / u_res;
+    vec2 b = u_ptB.xy / u_res;
+
+    vec4 prev = texture2D(u_prevState, pix);
+    float top    = min(prev.r, pix.y);
+    float bottom = min(prev.g, 1.0 - pix.y);
+    float index  = prev.b;
+
+    if (abs(u_ptA.z - u_ptB.z) > 0.5) { gl_FragColor = vec4(top,bottom,index,1.0); return; }
+
+    if ((pix.x > max(a.x,b.x)) || (pix.x < min(a.x,b.x))) { gl_FragColor = vec4(top,bottom,index,1.0); return; }
+
+    vec2 isec = pointOnLineWithX(pix.x, a, b);
+
+    if (isec.y <= pix.y) {
+      if (pix.y - isec.y < top) { top = pix.y - isec.y; index = u_colorIndex; }
+    } else {
+      if (isec.y - pix.y < bottom) { bottom = isec.y - pix.y; }
+    }
+    gl_FragColor = vec4(top,bottom,index,1.0);
+  }`;
+
+  const FRAG_GRAD = `
+  precision highp float;
+  varying vec2 vTexCoord;
+  #define MAX 30
+  #define GRAIN_STEPS 20.0
+  uniform sampler2D u_data;
+  uniform vec4 u_colors[MAX];
+  uniform bool u_grain;
+
+  float hash12(vec2 p){
+    vec3 p3 = fract(vec3(p.xyx)*.1031);
+    p3 += dot(p3, p3.yzx+33.33);
+    return fract((p3.x+p3.y)*p3.z);
+  }
+
+  void main(){
+    vec2 pix = vTexCoord; pix.y = 1.0 - pix.y;
+    vec4 data = texture2D(u_data, vTexCoord);
+    float top = data.r, bottom = data.g;
+
+    vec4 cTop = u_colors[0];
+    vec4 cBot = u_colors[1];
+    vec4 cMid = u_colors[2];
+
+    float t = top / max(top+bottom, 1e-6);
+    vec3 outColor;
+
+    if (cMid.a < 0.0) {
+      if (u_grain){
+        float sum = 0.0;
+        for(float i=0.0;i<GRAIN_STEPS;i++){
+          float H = hash12(gl_FragCoord.xy + i*500.0);
+          sum += (t>H)?1.0:0.0;
+        }
+        t = sum / GRAIN_STEPS;
+      }
+      outColor = mix(cTop.rgb/255.0, cBot.rgb/255.0, t);
+    } else {
+      float n = clamp(cMid.a, 0.0, 1.0);
+      if (t <= n){
+        t = t/n;
+        if (u_grain){ float s=0.0; for(float i=0.0;i<GRAIN_STEPS;i++){ float H=hash12(gl_FragCoord.xy+i*500.0); s += (H<t)?1.0:0.0;} t=s/GRAIN_STEPS; }
+        outColor = mix(cTop.rgb/255.0, cMid.rgb/255.0, t);
+      } else {
+        t = (t-n) / max(1.0-n, 1e-6);
+        if (u_grain){ float s=0.0; for(float i=0.0;i<GRAIN_STEPS;i++){ float H=hash12(gl_FragCoord.xy+i*500.0); s += (t>H)?1.0:0.0;} t=s/GRAIN_STEPS; }
+        outColor = mix(cMid.rgb/255.0, cBot.rgb/255.0, t);
+      }
+    }
+    gl_FragColor = vec4(outColor, 1.0);
+  }`;
+
+  function makeProgram(vsSrc, fsSrc){
+    const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+    if(!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(vs);
+    const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+    if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(fs);
+    const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+    return prog;
+  }
+  function makeTexFloat(w,h){
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.FLOAT,null);
+    return t;
+  }
+  function makeFbo(tex){ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0); return f; }
+
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1,-1,  +1,-1,  -1,+1,  +1,+1
+  ]), gl.STATIC_DRAW);
+
+  const progData = makeProgram(VERT, FRAG_DATA);
+  const aPos_data = gl.getAttribLocation(progData,'aPos');
+  const u_prevState = gl.getUniformLocation(progData,'u_prevState');
+  const u_ptA = gl.getUniformLocation(progData,'u_ptA');
+  const u_ptB = gl.getUniformLocation(progData,'u_ptB');
+  const u_colorIndex = gl.getUniformLocation(progData,'u_colorIndex');
+  const u_res = gl.getUniformLocation(progData,'u_res');
+
+  const progGrad = makeProgram(VERT, FRAG_GRAD);
+  const aPos_grad = gl.getAttribLocation(progGrad,'aPos');
+  const u_data = gl.getUniformLocation(progGrad,'u_data');
+  const u_colors = Array.from({length:30}, (_,i)=> gl.getUniformLocation(progGrad, 'u_colors['+i+']'));
+  const u_grain = gl.getUniformLocation(progGrad,'u_grain');
+
+  let W=0,H=0;
+  let texA, texB, fboA, fboB;
+
+  function resize(){
+    const r = canvas.getBoundingClientRect();
+    const w = Math.max(64, Math.floor(r.width * dpi));
+    const h = Math.max(64, Math.floor(r.height * dpi));
+    if (w===W && h===H) return;
+    W=w; H=h;
+    canvas.width=W; canvas.height=H;
+    texA = makeTexFloat(W,H); fboA = makeFbo(texA);
+    texB = makeTexFloat(W,H); fboB = makeFbo(texB);
+    initState();
+    draw();
+  }
+
+  function initState(){
+    const initFS = `
+      precision highp float; varying vec2 vTexCoord; void main(){
+        float y = vTexCoord.y; gl_FragColor = vec4(y, 1.0-y, -1.0, 1.0);
+      }`;
+    const p = makeProgram(VERT, initFS);
+    gl.useProgram(p);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.viewport(0,0,W,H);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(gl.getAttribLocation(p,'aPos'));
+    gl.vertexAttribPointer(gl.getAttribLocation(p,'aPos'), 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function parseColor(hex){
+    const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);
+    return [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16), 255];
+  }
+  function pushColors(){
+    gl.useProgram(progGrad);
+    const ct = parseColor($('#cTop').value);
+    const cm = parseColor($('#cMid').value);
+    const cb = parseColor($('#cBot').value);
+    const mid = parseFloat($('#midPos').value);
+    const midA = (mid<=0.001 || mid>=0.999) ? -1.0 : mid;
+    const cols = [ct, cb, [cm[0],cm[1],cm[2], Math.round(midA*255)]];
+    cols.forEach((c,i)=>{
+      gl.uniform4f(u_colors[i], c[0], c[1], c[2], (i===2? (cols[2][3]/255.0) : 1.0));
+    });
+    const grainEnabled = $('#grain').checked || svgLoaded;
+    gl.uniform1i(u_grain, grainEnabled?1:0);
+  }
+
+  let drawing=false; let last=null; let strokeId=1; let brushPx=1.0;
+  let rafScheduled = false;
+  let svgLoaded = false;
+  
+  // History stack for undo functionality
+  let historyStack = [];
+  const MAX_HISTORY = 50; // Maximum number of undo steps
+  
+  // Save current state to history
+  function saveState() {
+    // Read current texture data from fboA
+    const pixels = new Float32Array(W * H * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    
+    // Save photo layer state
+    let photoData = null;
+    let photoImage = null;
+    if (originalPhoto) {
+      photoImage = originalPhoto; // Store reference to ImageBitmap
+      // Also save rendered photo layer
+      if (photoLayer.width > 0 && photoLayer.height > 0) {
+        photoData = photoCtx.getImageData(0, 0, photoLayer.width, photoLayer.height);
+      }
+    }
+    
+    // Save to history stack
+    historyStack.push({
+      pixels: pixels,
+      width: W,
+      height: H,
+      svgLoaded: svgLoaded,
+      photoImage: photoImage,
+      photoData: photoData,
+      photoLayerW: photoLayer.width,
+      photoLayerH: photoLayer.height
+    });
+    
+    // Limit history size
+    if (historyStack.length > MAX_HISTORY) {
+      historyStack.shift();
+    }
+  }
+  
+  // Restore previous state (undo)
+  function undo() {
+    if (historyStack.length === 0) {
+      console.log('Nothing to undo');
+      return;
+    }
+    
+    const prevState = historyStack.pop();
+    
+    // Check if dimensions match
+    if (prevState.width !== W || prevState.height !== H) {
+      console.log('Canvas size changed, cannot undo');
+      historyStack.push(prevState); // Put it back
+      return;
+    }
+    
+    // Restore texture data to fboA
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.FLOAT, prevState.pixels);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    
+    // Restore photo layer
+    if (prevState.photoImage) {
+      originalPhoto = prevState.photoImage;
+      if (prevState.photoData && prevState.photoLayerW === photoLayer.width && prevState.photoLayerH === photoLayer.height) {
+        photoCtx.putImageData(prevState.photoData, 0, 0);
+      } else {
+        // Re-render if sizes don't match
+        renderPhotomaker();
+      }
+      // Show photo settings section
+      $('#photomakerSection').classList.remove('hidden');
+    } else {
+      originalPhoto = null;
+      photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
+      // Hide photo settings section when no photo
+      $('#photomakerSection').classList.add('hidden');
+    }
+    
+    // Restore svgLoaded state
+    svgLoaded = prevState.svgLoaded;
+    
+    // Redraw
+    draw();
+  }
+
+  canvas.addEventListener('mousedown', (e)=>{ 
+    drawing=true; 
+    last=mouse(e); 
+    strokeId++;
+    saveState(); // Save state before drawing
+    draw();
+  });
+  
+  window.addEventListener('mouseup', ()=> { 
+    drawing=false;
+    draw();
+  });
+  
+  window.addEventListener('mouseleave', ()=> { 
+    drawing=false;
+    draw();
+  });
+  
+  canvas.addEventListener('mousemove', (e)=>{
+    if(!drawing) return;
+    const cur = mouse(e);
+    
+    drawSegment(last, cur);
+    last = cur;
+    
+    if(!rafScheduled) {
+      rafScheduled = true;
+      requestAnimationFrame(()=>{
+        rafScheduled = false;
+        draw();
+      });
+    }
+  });
+  canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); brushPx = Math.max(1, Math.min(64, brushPx + (e.deltaY<0?1:-1))); }, {passive:false});
+  $('#clear').onclick = ()=>{ 
+    svgLoaded = false;
+    initState(); 
+    draw(); 
+    // Also clear photo layer
+    if(originalPhoto) {
+      originalPhoto = null;
+      photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
+      // Hide photo settings section when photo is cleared
+      $('#photomakerSection').classList.add('hidden');
+    }
+  };
+  $('#download').onclick = ()=>{
+    // Create temp canvas with the actual display size
+    const tmp = document.createElement('canvas');
+    tmp.width = canvas.width;
+    tmp.height = canvas.height;
+    const tmpCtx = tmp.getContext('2d');
+    
+    // Draw WebGL layer (full resolution)
+    tmpCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, tmp.width, tmp.height);
+    
+    // Draw photo layer on top if exists (must match same dimensions)
+    if(photoLayer && photoLayer.width && photoLayer.height){
+      tmpCtx.drawImage(photoLayer, 0, 0, photoLayer.width, photoLayer.height, 0, 0, tmp.width, tmp.height);
+    }
+    
+    tmp.toBlob((blob)=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gradient-brush-' + Date.now() + '.png';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  $('#svgInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.name.endsWith('.svg')) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const svgContent = event.target.result;
+      loadSVGPaths(svgContent);
+      // Clear input so same file can be loaded again
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  };
+  
+  // GRAIN checkbox handler
+  $('#grain').onchange = ()=> draw();
+  
+  // Color pickers handlers
+  $('#cTop').oninput = ()=> draw();
+  $('#cMid').oninput = ()=> draw();
+  $('#cBot').oninput = ()=> draw();
+  $('#midPos').oninput = ()=> draw();
+  
+  // UNDO buttons handlers (both buttons work the same way)
+  const undoButtons = document.querySelectorAll('.btn-undo');
+  undoButtons.forEach(btn => {
+    btn.onclick = ()=> undo();
+  });
+  
+  window.addEventListener('keydown', (e)=>{ 
+    if(e.key==='Escape'){ 
+      svgLoaded = false;
+      initState(); 
+      draw(); 
+    }
+    // Ctrl+Z or Cmd+Z for undo
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      e.preventDefault();
+      undo();
+    }
+  });
+
+  function mouse(e){
+    const r = canvas.getBoundingClientRect();
+    return { 
+      x: (e.clientX - r.left) * dpi, 
+      y: H - (e.clientY - r.top) * dpi
+    };
+  }
+
+  function loadSVGPaths(svgContent) {
+    try {
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+      const svgElement = svgDoc.querySelector('svg');
+      
+      if (!svgElement) {
+        alert('Не удалось найти SVG элемент');
+        return;
+      }
+
+      const viewBox = svgElement.getAttribute('viewBox') || 
+                     `${svgElement.getAttribute('width')} ${svgElement.getAttribute('height')}`;
+      const [x, y, width, height] = viewBox.split(' ').map(Number);
+      
+      const paths = svgElement.querySelectorAll('path');
+      
+      if (paths.length === 0) {
+        alert('SVG не содержит path элементов');
+        return;
+      }
+
+      const pathGroups = [];
+      paths.forEach((path, index) => {
+        const pathData = path.getAttribute('d');
+        if (pathData) {
+          const points = parsePathData(pathData, width, height);
+          if (points.length > 0) {
+            pathGroups.push({
+              points: points,
+              index: index,
+              bounds: calculateBounds(points)
+            });
+          }
+        }
+      });
+
+      pathGroups.sort((a, b) => a.points.length - b.points.length);
+
+      saveState(); // Save state before loading SVG
+      svgLoaded = true;
+      $('#grain').checked = true;
+      
+      drawSVGGroups(pathGroups);
+      
+    } catch (error) {
+      console.error('Ошибка при загрузке SVG:', error);
+      alert('Ошибка при загрузке SVG файла');
+    }
+  }
+
+  function parsePathData(pathData, svgWidth, svgHeight) {
+    const points = [];
+    const commands = pathData.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) || [];
+    
+    let currentX = 0, currentY = 0;
+    let startX = 0, startY = 0;
+    let prevControlX = 0, prevControlY = 0;
+    
+    commands.forEach(cmd => {
+      const type = cmd[0];
+      const coords = cmd.slice(1).trim().split(/[\s,]+/).filter(s => s).map(Number);
+      
+      switch (type.toLowerCase()) {
+        case 'm':
+          currentX += coords[0] || 0;
+          currentY += coords[1] || 0;
+          if (type === 'M') {
+            currentX = coords[0] || 0;
+            currentY = coords[1] || 0;
+          }
+          startX = currentX;
+          startY = currentY;
+          points.push({x: currentX, y: currentY});
+          break;
+          
+        case 'l':
+          for (let i = 0; i < coords.length; i += 2) {
+            if (coords[i] !== undefined && coords[i + 1] !== undefined) {
+              if (type === 'L') {
+                currentX = coords[i];
+                currentY = coords[i + 1];
+              } else {
+                currentX += coords[i];
+                currentY += coords[i + 1];
+              }
+              points.push({x: currentX, y: currentY});
+            }
+          }
+          break;
+          
+        case 'h':
+          for (let i = 0; i < coords.length; i++) {
+            if (type === 'H') {
+              currentX = coords[i];
+            } else {
+              currentX += coords[i];
+            }
+            points.push({x: currentX, y: currentY});
+          }
+          break;
+          
+        case 'v':
+          for (let i = 0; i < coords.length; i++) {
+            if (type === 'V') {
+              currentY = coords[i];
+            } else {
+              currentY += coords[i];
+            }
+            points.push({x: currentX, y: currentY});
+          }
+          break;
+          
+        case 'c':
+          for (let i = 0; i < coords.length; i += 6) {
+            if (coords[i + 5] !== undefined) {
+              const x1 = type === 'C' ? coords[i] : currentX + coords[i];
+              const y1 = type === 'C' ? coords[i + 1] : currentY + coords[i + 1];
+              const x2 = type === 'C' ? coords[i + 2] : currentX + coords[i + 2];
+              const y2 = type === 'C' ? coords[i + 3] : currentY + coords[i + 3];
+              const x = type === 'C' ? coords[i + 4] : currentX + coords[i + 4];
+              const y = type === 'C' ? coords[i + 5] : currentY + coords[i + 5];
+              
+              const curvePoints = generateCubicBezierPoints(
+                currentX, currentY, x1, y1, x2, y2, x, y
+              );
+              points.push(...curvePoints);
+              
+              currentX = x;
+              currentY = y;
+              prevControlX = x2;
+              prevControlY = y2;
+            }
+          }
+          break;
+          
+        case 's':
+          for (let i = 0; i < coords.length; i += 4) {
+            if (coords[i + 3] !== undefined) {
+              const x2 = type === 'S' ? coords[i] : currentX + coords[i];
+              const y2 = type === 'S' ? coords[i + 1] : currentY + coords[i + 1];
+              const x = type === 'S' ? coords[i + 2] : currentX + coords[i + 2];
+              const y = type === 'S' ? coords[i + 3] : currentY + coords[i + 3];
+              
+              const x1 = currentX + (currentX - prevControlX);
+              const y1 = currentY + (currentY - prevControlY);
+              
+              const curvePoints = generateCubicBezierPoints(
+                currentX, currentY, x1, y1, x2, y2, x, y
+              );
+              points.push(...curvePoints);
+              
+              currentX = x;
+              currentY = y;
+              prevControlX = x2;
+              prevControlY = y2;
+            }
+          }
+          break;
+          
+        case 'q':
+          for (let i = 0; i < coords.length; i += 4) {
+            if (coords[i + 3] !== undefined) {
+              const x1 = type === 'Q' ? coords[i] : currentX + coords[i];
+              const y1 = type === 'Q' ? coords[i + 1] : currentY + coords[i + 1];
+              const x = type === 'Q' ? coords[i + 2] : currentX + coords[i + 2];
+              const y = type === 'Q' ? coords[i + 3] : currentY + coords[i + 3];
+              
+              const curvePoints = generateQuadraticBezierPoints(
+                currentX, currentY, x1, y1, x, y
+              );
+              points.push(...curvePoints);
+              
+              currentX = x;
+              currentY = y;
+              prevControlX = x1;
+              prevControlY = y1;
+            }
+          }
+          break;
+          
+        case 't':
+          for (let i = 0; i < coords.length; i += 2) {
+            if (coords[i + 1] !== undefined) {
+              const x = type === 'T' ? coords[i] : currentX + coords[i];
+              const y = type === 'T' ? coords[i + 1] : currentY + coords[i + 1];
+              
+              const x1 = currentX + (currentX - prevControlX);
+              const y1 = currentY + (currentY - prevControlY);
+              
+              const curvePoints = generateQuadraticBezierPoints(
+                currentX, currentY, x1, y1, x, y
+              );
+              points.push(...curvePoints);
+              
+              currentX = x;
+              currentY = y;
+              prevControlX = x1;
+              prevControlY = y1;
+            }
+          }
+          break;
+          
+        case 'z':
+          if (points.length > 0) {
+            points.push({x: startX, y: startY});
+          }
+          break;
+      }
+    });
+    
+    const scaleX = W / svgWidth;
+    const scaleY = H / svgHeight;
+    const scale = Math.min(scaleX, scaleY) * 0.8;
+    
+    return points.map(p => ({
+      x: p.x * scale + (W - svgWidth * scale) / 2,
+      y: H - (p.y * scale + (H - svgHeight * scale) / 2)
+    }));
+  }
+
+  function generateCubicBezierPoints(x0, y0, x1, y1, x2, y2, x3, y3) {
+    const points = [];
+    
+    const dist = Math.hypot(x3 - x0, y3 - y0);
+    const steps = Math.max(8, Math.min(25, Math.floor(dist / 2)));
+    
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const u = 1 - t;
+      const tt = t * t;
+      const uu = u * u;
+      const uuu = uu * u;
+      const ttt = tt * t;
+      
+      const x = uuu * x0 + 3 * uu * t * x1 + 3 * u * tt * x2 + ttt * x3;
+      const y = uuu * y0 + 3 * uu * t * y1 + 3 * u * tt * y2 + ttt * y3;
+      
+      points.push({x, y});
+    }
+    
+    return points;
+  }
+
+  function generateQuadraticBezierPoints(x0, y0, x1, y1, x2, y2) {
+    const points = [];
+    
+    const dist = Math.hypot(x2 - x0, y2 - y0);
+    const steps = Math.max(6, Math.min(18, Math.floor(dist / 2)));
+    
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const u = 1 - t;
+      const uu = u * u;
+      const tt = t * t;
+      
+      const x = uu * x0 + 2 * u * t * x1 + tt * x2;
+      const y = uu * y0 + 2 * u * t * y1 + tt * y2;
+      
+      points.push({x, y});
+    }
+    
+    return points;
+  }
+
+  function calculateBounds(points) {
+    if (points.length === 0) return {minX: 0, minY: 0, maxX: 0, maxY: 0};
+    
+    let minX = points[0].x, minY = points[0].y;
+    let maxX = points[0].x, maxY = points[0].y;
+    
+    points.forEach(p => {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    });
+    
+    return {minX, minY, maxX, maxY};
+  }
+
+  function boundsIntersect(a, b) {
+    return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
+  }
+
+  function drawSVGGroups(pathGroups) {
+    if (pathGroups.length === 0) return;
+    
+    let totalSegments = 0;
+    pathGroups.forEach(group => {
+      totalSegments += group.points.length - 1;
+    });
+    
+    let completedSegments = 0;
+    let currentGroupIndex = 0;
+    let currentSegmentIndex = 0;
+    const segmentsPerFrame = 3;
+    
+    function weaveNextPart() {
+      let segmentsDrawn = 0;
+      
+      while (currentGroupIndex < pathGroups.length && segmentsDrawn < segmentsPerFrame) {
+        const group = pathGroups[currentGroupIndex];
+        const points = group.points;
+        
+        const isComplexArea = points.length > 100;
+        const isTextArea = points.length > 200;
+        
+        let density;
+        if (isTextArea) {
+          density = 0.25;
+        } else if (isComplexArea) {
+          density = 0.35;
+        } else {
+          density = 0.5;
+        }
+        
+        while (currentSegmentIndex < points.length - 1 && segmentsDrawn < segmentsPerFrame) {
+          const prevPoint = points[currentSegmentIndex];
+          const currentPoint = points[currentSegmentIndex + 1];
+          
+          const dist = Math.hypot(currentPoint.x - prevPoint.x, currentPoint.y - prevPoint.y);
+          
+          if (dist >= 0.2) {
+            if (isCircularSegment(prevPoint, currentPoint, points, currentSegmentIndex)) {
+              drawCircularSegment(prevPoint, currentPoint, density * 0.8);
+            } else {
+              drawSegmentSVGAdaptive(prevPoint, currentPoint, density);
+            }
+            
+            segmentsDrawn++;
+            completedSegments++;
+          }
+          
+          currentSegmentIndex++;
+        }
+        
+        if (currentSegmentIndex >= points.length - 1) {
+          currentGroupIndex++;
+          currentSegmentIndex = 0;
+        }
+      }
+      
+      draw();
+      
+      if (currentGroupIndex < pathGroups.length) {
+        requestAnimationFrame(weaveNextPart);
+      }
+    }
+    
+    weaveNextPart();
+  }
+
+  function drawSegmentSVGAdaptive(a, b, density = 0.3) {
+    if (!a || !b) return;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    
+    if (dist < 1) {
+      drawSingleSegment(a, b);
+      return;
+    }
+    
+    const step = Math.max(1, brushPx * density);
+    const n = Math.max(1, Math.min(Math.floor(dist / step), 8));
+    
+    for (let i = 1; i <= n; i++) {
+      const t0 = (i - 1) / n;
+      const t1 = i / n;
+      
+      const p0 = {
+        x: a.x + dx * t0,
+        y: a.y + dy * t0,
+        z: strokeId
+      };
+      const p1 = {
+        x: a.x + dx * t1,
+        y: a.y + dy * t1,
+        z: strokeId
+      };
+      
+      drawSingleSegment(p0, p1);
+    }
+  }
+
+  function drawSingleSegment(a, b) {
+    gl.useProgram(progData);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+    gl.viewport(0, 0, W, H);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform1i(u_prevState, 0);
+    gl.uniform3f(u_ptA, a.x, a.y, a.z);
+    gl.uniform3f(u_ptB, b.x, b.y, b.z);
+    gl.uniform1f(u_colorIndex, 0.0);
+    gl.uniform2f(u_res, W, H);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(aPos_data);
+    gl.vertexAttribPointer(aPos_data, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    let tt = texA;
+    texA = texB;
+    texB = tt;
+    let ff = fboA;
+    fboA = fboB;
+    fboB = ff;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function isCircularSegment(prevPoint, currentPoint, allPoints, index) {
+    const dist = Math.hypot(currentPoint.x - prevPoint.x, currentPoint.y - prevPoint.y);
+    
+    if (dist < 2) return true;
+    
+    if (index > 0 && index < allPoints.length - 1) {
+      const p0 = allPoints[index - 1];
+      const p1 = prevPoint;
+      const p2 = currentPoint;
+      const p3 = allPoints[index + 1];
+      
+      const angle1 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+      const angle2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const angle3 = Math.atan2(p3.y - p2.y, p3.x - p2.x);
+      
+      const curvature1 = Math.abs(angle2 - angle1);
+      const curvature2 = Math.abs(angle3 - angle2);
+      
+      if (curvature1 > 0.2 || curvature2 > 0.2) return true;
+    }
+    
+    return false;
+  }
+
+  function drawCircularSegment(a, b, density) {
+    if (!a || !b) return;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    
+    const step = Math.max(1, brushPx * density * 0.8);
+    const n = Math.max(1, Math.min(Math.floor(dist / step), 6));
+    
+    for (let i = 1; i <= n; i++) {
+      const t0 = (i - 1) / n;
+      const t1 = i / n;
+      
+      const p0 = {x: a.x + dx * t0, y: a.y + dy * t0, z: strokeId};
+      const p1 = {x: a.x + dx * t1, y: a.y + dy * t1, z: strokeId};
+      
+      drawSingleSegment(p0, p1);
+    }
+  }
+
+  function drawSegment(a,b){
+    if (!a || !b) return;
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const dist = Math.max(1, Math.hypot(dx,dy));
+    
+    const step = Math.max(2, brushPx * 0.8);
+    const n = Math.max(1, Math.min(Math.floor(dist/step), 8));
+    
+    for(let i=1;i<=n;i++){
+      const t0=(i-1)/n, t1=i/n;
+      const p0={x:a.x+dx*t0, y:a.y+dy*t0, z:strokeId};
+      const p1={x:a.x+dx*t1, y:a.y+dy*t1, z:strokeId};
+      
+      gl.useProgram(progData);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+      gl.viewport(0,0,W,H);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
+      gl.uniform1i(u_prevState, 0);
+      gl.uniform3f(u_ptA, p0.x, p0.y, p0.z);
+      gl.uniform3f(u_ptB, p1.x, p1.y, p1.z);
+      gl.uniform1f(u_colorIndex, 0.0);
+      gl.uniform2f(u_res, W, H);
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.enableVertexAttribArray(aPos_data);
+      gl.vertexAttribPointer(aPos_data,2,gl.FLOAT,false,0,0);
+      gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+      let tt=texA; texA=texB; texB=tt; let ff=fboA; fboA=fboB; fboB=ff;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function draw(){
+    pushColors();
+    gl.useProgram(progGrad);
+    gl.viewport(0,0,W,H);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform1i(u_data, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(aPos_grad);
+    gl.vertexAttribPointer(aPos_grad,2,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  }
+
+  function fit(){
+    const parent = stage; const pad=0;
+    canvas.style.width = (parent.clientWidth - pad) + 'px';
+    canvas.style.height = (parent.clientHeight - pad) + 'px';
+    resize();
+  }
+  new ResizeObserver(fit).observe(stage);
+  fit();
+
+  // ========== PHOTOMAKER ==========
+  const photoLayer = document.createElement('canvas');
+  photoLayer.id = 'photoLayer';
+  stage.appendChild(photoLayer);
+  const photoCtx = photoLayer.getContext('2d', {alpha: true});
+  
+  const offscreen = document.createElement('canvas');
+  const offctx = offscreen.getContext('2d', {alpha: false});
+  
+  let originalPhoto = null; // ImageBitmap
+  
+  function syncPhotoLayerSize(){
+    const pw = canvas.clientWidth, ph = canvas.clientHeight;
+    if(photoLayer.width !== pw || photoLayer.height !== ph){
+      photoLayer.width = pw;
+      photoLayer.height = ph;
+    }
+  }
+  
+  function seededRandom(seed){
+    let x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+  }
+  
+  function renderPhotomaker(){
+    syncPhotoLayerSize();
+    const pw = photoLayer.width, ph = photoLayer.height;
+    photoCtx.clearRect(0,0,pw,ph);
+    
+    if(!originalPhoto) return;
+    
+    // Вписать фото в offscreen (letterbox fit)
+    const imgW = originalPhoto.width, imgH = originalPhoto.height;
+    const sx = pw / imgW, sy = ph / imgH;
+    const s = Math.min(sx, sy);
+    const fitW = imgW * s, fitH = imgH * s;
+    const ox = (pw - fitW)/2, oy = (ph - fitH)/2;
+    
+    offscreen.width = pw;
+    offscreen.height = ph;
+    offctx.fillStyle = '#fff';
+    offctx.fillRect(0,0,pw,ph);
+    offctx.drawImage(originalPhoto, ox, oy, fitW, fitH);
+    
+    const srcImageData = offctx.getImageData(0,0,pw,ph);
+    const size = parseFloat($('#patternSize')?.value || '20');
+    const detail = parseFloat($('#detailLevel')?.value || '50');
+    const pattern = $('#patternSelect')?.value || 'dots';
+    const invert = $('#invertPattern')?.checked || false;
+    
+    if(pattern === 'dots'){
+      renderDots(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'displace'){
+      renderDisplace(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'weave'){
+      renderWeave(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'shapes'){
+      renderShapes(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'ascii'){
+      renderASCII(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'gradient'){
+      renderGradient(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    } else if(pattern === 'dispersion'){
+      renderDispersion(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    }
+  }
+  
+  function renderDots(ctx, imgData, size, detail, w, h, invert){
+    ctx.fillStyle = '#000';
+    const step = Math.max(4, size);
+    const data = imgData.data;
+    
+    for(let y=step/2; y<h; y+=step){
+      for(let x=step/2; x<w; x+=step){
+        let sumBright = 0, count=0;
+        let isWhiteBg = true;
+        for(let dy=-step/2; dy<step/2; dy++){
+          for(let dx=-step/2; dx<step/2; dx++){
+            const px = Math.floor(x+dx), py = Math.floor(y+dy);
+            if(px<0||px>=w||py<0||py>=h) continue;
+            const i = (py*w + px)*4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            // Check if this pixel is white background (letterbox area)
+            if(r < 250 || g < 250 || b < 250) isWhiteBg = false;
+            const gray = r*0.299 + g*0.587 + b*0.114;
+            sumBright += gray;
+            count++;
+          }
+        }
+        // Skip white background areas
+        if(isWhiteBg) continue;
+        
+        const avgGray = count ? sumBright/count : 255;
+        const brightness = invert ? avgGray : (255 - avgGray);
+        const dark = 1 - brightness/255;
+        const detailFactor = (detail - 10)/(90-10);
+        const minRad = detailFactor * 0.05;
+        const maxRad = 0.5;
+        const r = step * (minRad + dark*(maxRad - minRad));
+        if(r>0.5){
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+  
+  function renderDisplace(ctx, imgData, size, detail, w, h, invert){
+    const data = imgData.data;
+    const detailFactor = (detail - 10)/(90-10);
+    const step = Math.max(4, size);
+    const dotSize = Math.max(2, size * 0.4);
+    
+    // Get gradient colors from the UI
+    const colorTop = $('#cTop')?.value || '#EA489E';
+    const colorMid = $('#cMid')?.value || '#E9F754';
+    const colorBot = $('#cBot')?.value || '#233FF5';
+    const midPos = parseFloat($('#midPos')?.value || '0.5');
+    
+    // Helper to parse hex color to RGB
+    function hexToRgb(hex){
+      const r = parseInt(hex.slice(1,3), 16);
+      const g = parseInt(hex.slice(3,5), 16);
+      const b = parseInt(hex.slice(5,7), 16);
+      return {r, g, b};
+    }
+    
+    // Helper to interpolate between two colors
+    function lerpColor(c1, c2, t){
+      return {
+        r: Math.floor(c1.r + (c2.r - c1.r) * t),
+        g: Math.floor(c1.g + (c2.g - c1.g) * t),
+        b: Math.floor(c1.b + (c2.b - c1.b) * t)
+      };
+    }
+    
+    const rgbTop = hexToRgb(colorTop);
+    const rgbMid = hexToRgb(colorMid);
+    const rgbBot = hexToRgb(colorBot);
+    
+    // Displacement strength based on detail
+    const maxDisplacement = detail * 2.5; // 25-225 pixels
+    
+    // Perspective and rotation amount (higher STRENGTH = more rotation)
+    const rotationFactor = detailFactor; // 0 to 1
+    const skewAmount = rotationFactor * 200; // Max 200px horizontal skew
+    
+    // Draw dots with displacement (3D effect with rotation)
+    for(let y=step/2; y<h; y+=step){
+      for(let x=step/2; x<w; x+=step){
+        // Sample brightness
+        let sumBright=0, count=0;
+        let isWhiteBg = true;
+        for(let dy=-step/2; dy<step/2; dy++){
+          for(let dx=-step/2; dx<step/2; dx++){
+            const px = Math.floor(x+dx), py = Math.floor(y+dy);
+            if(px<0||px>=w||py<0||py>=h) continue;
+            const i = (py*w + px)*4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            // Check if this pixel is white background
+            if(r < 250 || g < 250 || b < 250) isWhiteBg = false;
+            const gray = r*0.299 + g*0.587 + b*0.114;
+            sumBright += gray;
+            count++;
+          }
+        }
+        // Skip white background areas
+        if(isWhiteBg) continue;
+        
+        const avgGray = count ? sumBright/count : 255;
+        const brightness = invert ? avgGray : (255 - avgGray);
+        const dark = brightness/255;
+        
+        // Skip very light areas
+        if(dark < 0.15) continue;
+        
+        // Normalize coordinates
+        const yNorm = y / h; // 0 to 1 (top to bottom)
+        const xNorm = (x - w/2) / (w/2); // -1 to 1 (left to right from center)
+        
+        // 3D rotation around vertical axis (Y-axis)
+        // Left side (x < center) comes forward, right side goes back
+        // This creates perspective foreshortening
+        
+        // Calculate how much the right side compresses (perspective)
+        const perspectiveScale = 1 - rotationFactor * 0.6; // Right side shrinks to 40% when fully rotated
+        
+        // For each point, apply perspective based on its X position
+        // Left side (xNorm = -1) stays at full width
+        // Right side (xNorm = 1) shrinks based on rotation
+        const xScale = xNorm > 0 
+          ? 1 - (xNorm * rotationFactor * 0.6) // Right side shrinks
+          : 1; // Left side stays full size
+        
+        // Calculate new X position with perspective
+        const baseX = w/2 + (x - w/2) * xScale;
+        
+        // Add slight Y offset for top/bottom perspective
+        const baseY = y;
+        
+        // Calculate displacement with rotation (points on right side displace less as they "rotate away")
+        const sidenessFactor = 1 - Math.abs(xNorm) * rotationFactor * 0.5; // Right side displaces less
+        const displaceX = dark * maxDisplacement * -0.8 * sidenessFactor;
+        const displaceY = dark * maxDisplacement * -0.6 * sidenessFactor;
+        
+        const newX = baseX + displaceX;
+        const newY = baseY + displaceY;
+        
+        // Vary dot size based on brightness, perspective AND rotation
+        const depthFactor = 1 - yNorm * 0.3 - Math.abs(xNorm) * rotationFactor * 0.4; // Further = smaller
+        const baseDotSize = dotSize * (0.4 + dark * 0.6);
+        const r = baseDotSize * Math.max(0.3, depthFactor); // Don't go too small
+        
+        // Draw dot with black color, alpha affected by depth
+        const alpha = (0.75 + dark * 0.25) * Math.max(0.4, depthFactor);
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(newX, newY, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+  
+  function renderWeave(ctx, imgData, size, detail, w, h, invert){
+    ctx.fillStyle = '#000';
+    const data = imgData.data;
+    const detailFactor = (detail-10)/(90-10);
+    const blurAmount = Math.floor((1-detailFactor)*8);
+    const step = Math.max(3, size * (0.4 + detailFactor*0.6));
+    
+    // Simple vertical blur
+    const blurred = new Uint8ClampedArray(data);
+    if(blurAmount > 1){
+      for(let pass=0; pass<2; pass++){
+        for(let x=0; x<w; x++){
+          for(let y=0; y<h; y++){
+            let sum=0, cnt=0;
+            for(let dy=-blurAmount; dy<=blurAmount; dy++){
+              const ny = y+dy;
+              if(ny<0||ny>=h) continue;
+              const i = (ny*w+x)*4;
+              sum += data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114;
+              cnt++;
+            }
+            const avg = cnt ? sum/cnt : 0;
+            const bi = (y*w+x)*4;
+            blurred[bi] = blurred[bi+1] = blurred[bi+2] = avg;
+          }
+        }
+      }
+    }
+    
+    // Noise field
+    const noise = new Float32Array(w*h);
+    for(let i=0; i<w*h; i++){
+      noise[i] = seededRandom(i*1.234 + 567);
+    }
+    
+    for(let x=step/2; x<w; x+=step){
+      const col = Math.floor(x);
+      for(let y=0; y<h; y++){
+        const i = (y*w + col)*4;
+        // Check if this is white background
+        if(data[i] >= 250 && data[i+1] >= 250 && data[i+2] >= 250) continue;
+        
+        const gray = blurred[i];
+        const brightness = invert ? gray : (255 - gray);
+        const dark = 1 - brightness/255;
+        const n = noise[y*w + col];
+        const threshold = 0.3 + detailFactor*0.4 - dark*0.5;
+        if(n < threshold){
+          const len = step * (0.6 + (1-detailFactor)*1.5);
+          const startY = Math.max(0, y - len/2);
+          const endY = Math.min(h, y + len/2);
+          const thickness = Math.max(1, step*0.7);
+          const offsetX = (n-0.5)*step*0.3;
+          ctx.fillRect(x + offsetX, startY, thickness, endY-startY);
+        }
+      }
+    }
+  }
+  
+  function renderShapes(ctx, imgData, size, detail, w, h, invert){
+    ctx.fillStyle = '#000';
+    const data = imgData.data;
+    const detailFactor = (detail - 10)/(90-10);
+    const step = Math.max(8, size * (1.5 - detailFactor*0.8));
+    let seedCounter = 12345;
+    
+    for(let y=step/2; y<h; y+=step){
+      for(let x=step/2; x<w; x+=step){
+        let sumBright=0, count=0;
+        let isWhiteBg = true;
+        for(let dy=-step/2; dy<step/2; dy++){
+          for(let dx=-step/2; dx<step/2; dx++){
+            const px=Math.floor(x+dx), py=Math.floor(y+dy);
+            if(px<0||px>=w||py<0||py>=h) continue;
+            const i=(py*w+px)*4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            // Check if this pixel is white background
+            if(r < 250 || g < 250 || b < 250) isWhiteBg = false;
+            sumBright += r*0.299 + g*0.587 + b*0.114;
+            count++;
+          }
+        }
+        // Skip white background areas
+        if(isWhiteBg) continue;
+        
+        const avgBright = count ? sumBright/count : 255;
+        const brightness = invert ? avgBright : (255 - avgBright);
+        const dark = 1 - brightness/255;
+        
+        // Skip very light areas
+        if(dark < 0.2) continue;
+        
+        const objSize = step * (0.3 + dark*0.6) * (0.8 + detailFactor*0.4);
+        
+        seedCounter++;
+        const r1 = seededRandom(seedCounter);
+        const shapeType = r1<0.33 ? 'tri' : (r1<0.66 ? 'sq' : 'circle');
+        const rotation = seededRandom(seedCounter+1000) * Math.PI*2;
+        
+        ctx.save();
+        ctx.translate(x,y);
+        ctx.rotate(rotation);
+        ctx.beginPath();
+        if(shapeType==='tri'){
+          const h=objSize*0.866;
+          ctx.moveTo(0,-h*0.6667);
+          ctx.lineTo(-objSize/2, h*0.3333);
+          ctx.lineTo(objSize/2, h*0.3333);
+          ctx.closePath();
+        } else if(shapeType==='sq'){
+          ctx.rect(-objSize/2, -objSize/2, objSize, objSize);
+        } else {
+          ctx.arc(0,0,objSize/2,0,Math.PI*2);
+        }
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+  
+  function renderASCII(ctx, imgData, size, detail, w, h, invert){
+    const data = imgData.data;
+    const detailFactor = (detail - 10)/(90-10);
+    
+    // Character sets grouped by visual density
+    const charSets = {
+      light: ['.', "'", '`', ',', '-', '_'],
+      medium: [':', ';', '!', '+', '~', '=', '^', '"'],
+      mediumDark: ['*', '#', 'x', 'X', 'o', 'O', '%', '&', '@'],
+      dark: ['#', '@', '$', '%', '8', 'W', 'M', 'B']
+    };
+    
+    // Font size based on size slider (smaller = more characters, more detail)
+    const fontSize = Math.max(6, Math.floor(size * 0.8));
+    const step = fontSize * 0.6; // Character spacing
+    
+    ctx.font = `${fontSize}px monospace`;
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    let seedCounter = 54321; // For randomness
+    
+    for(let y=step; y<h; y+=step){
+      for(let x=step; x<w; x+=step){
+        // Sample brightness in area around this point
+        let sumBright=0, count=0;
+        let isWhiteBg = true;
+        const sampleRadius = Math.floor(step/2);
+        for(let dy=-sampleRadius; dy<=sampleRadius; dy++){
+          for(let dx=-sampleRadius; dx<=sampleRadius; dx++){
+            const px=Math.floor(x+dx), py=Math.floor(y+dy);
+            if(px<0||px>=w||py<0||py>=h) continue;
+            const i=(py*w+px)*4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            // Check if this pixel is white background
+            if(r < 250 || g < 250 || b < 250) isWhiteBg = false;
+            sumBright += r*0.299 + g*0.587 + b*0.114;
+            count++;
+          }
+        }
+        // Skip white background areas
+        if(isWhiteBg) continue;
+        
+        const avgBright = count ? sumBright/count : 255;
+        
+        // Invert brightness if needed
+        const brightness = invert ? avgBright : (255 - avgBright);
+        const dark = 1 - brightness/255;
+        
+        // Skip very light areas (threshold depends on detail)
+        const threshold = 0.9 - detailFactor*0.5;
+        if(brightness/255 > threshold) continue;
+        
+        // Choose character set based on darkness
+        let charSet;
+        if(dark < 0.25) {
+          charSet = charSets.light;
+        } else if(dark < 0.5) {
+          charSet = charSets.medium;
+        } else if(dark < 0.75) {
+          charSet = charSets.mediumDark;
+        } else {
+          charSet = charSets.dark;
+        }
+        
+        // Add randomness: pick random character from appropriate set
+        seedCounter++;
+        const rand = seededRandom(seedCounter * (x + y * w));
+        const charIndex = Math.floor(rand * charSet.length);
+        const char = charSet[charIndex];
+        
+        if(char !== ' '){
+          ctx.fillText(char, x, y);
+        }
+      }
+    }
+  }
+  
+  function renderGradient(ctx, imgData, size, detail, w, h, invert){
+    const data = imgData.data;
+    const detailFactor = (detail - 10)/(90-10);
+    
+    // Optimize: Larger strips = fewer iterations
+    const stripWidth = Math.max(3, size * 0.8);
+    const stepY = Math.max(2, Math.floor(size * 0.3)); // Skip pixels vertically
+    
+    let seedCounter = 12345;
+    
+    // Draw vertical strips with varying heights
+    for(let x=0; x<w; x+=stripWidth){
+      const col = Math.floor(x);
+      
+      // Pre-calculate random variations for this column
+      seedCounter++;
+      const colRand = seededRandom(seedCounter);
+      const widthVar = colRand * stripWidth * 0.4;
+      const actualWidth = stripWidth + widthVar;
+      
+      // Sample brightness along this column (optimized sampling)
+      for(let y=0; y<h; y+=stepY){
+        // Quick brightness check
+        const i = (y*w + col)*4;
+        // Check if this is white background
+        if(data[i] >= 250 && data[i+1] >= 250 && data[i+2] >= 250) continue;
+        
+        const gray = data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114;
+        const brightness = invert ? (255 - gray) : gray;
+        const dark = brightness/255;
+        
+        // Skip very light areas
+        const threshold = 0.85 - detailFactor*0.4;
+        if(dark < (1 - threshold)) continue;
+        
+        // Calculate grayscale value based on vertical position (white to black gradient)
+        const yPos = y / h;
+        const grayValue = Math.floor(255 * (1 - yPos)); // Top=white(255), Bottom=black(0)
+        
+        // Vary strip height based on brightness and detail
+        const rand = seededRandom(seedCounter + y);
+        const baseHeight = Math.max(3, size * (0.8 + detailFactor * 1.2));
+        const heightVariation = rand * baseHeight * 0.6;
+        const stripHeight = Math.floor(dark * (baseHeight + heightVariation));
+        
+        if(stripHeight > 2){
+          // Apply brightness as opacity
+          const alpha = 0.65 + dark * 0.35;
+          ctx.fillStyle = `rgba(${grayValue},${grayValue},${grayValue},${alpha})`;
+          ctx.fillRect(x, y, actualWidth, stripHeight);
+          
+          // Skip ahead by the strip height to avoid overlap
+          y += stripHeight - 1;
+        }
+      }
+    }
+  }
+  
+  function renderDispersion(ctx, imgData, size, detail, w, h, invert){
+    const data = imgData.data;
+    const detailFactor = (detail - 10)/(90-10);
+    
+    // SPARSE particle grid - much larger steps for readability
+    const baseStep = Math.max(4, size * 0.5); // Larger steps = fewer particles
+    const step = Math.max(2, Math.floor(baseStep));
+    
+    // Dispersion strength based on detail slider
+    const maxDispersion = 80 + detailFactor * 120; // How far particles scatter
+    
+    let seedCounter = 99999;
+    
+    // Array to store particles with their properties
+    const particles = [];
+    
+    // Sample and create particles
+    for(let y=0; y<h; y+=step){
+      for(let x=0; x<w; x+=step){
+        const i = (y*w + x)*4;
+        if(i >= data.length) continue;
+        
+        // Check if this is white background
+        if(data[i] >= 250 && data[i+1] >= 250 && data[i+2] >= 250) continue;
+        
+        const gray = data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114;
+        const brightness = invert ? (255 - gray) : gray;
+        const dark = brightness/255;
+        
+        // Skip very light/transparent areas
+        if(dark < 0.05) continue;
+        
+        seedCounter++;
+        const rand1 = seededRandom(seedCounter);
+        const rand2 = seededRandom(seedCounter + 10000);
+        const rand3 = seededRandom(seedCounter + 20000);
+        
+        // Calculate dispersion from center
+        const centerX = w / 2;
+        const centerY = h / 2;
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const distFromCenter = Math.sqrt(dx*dx + dy*dy);
+        const maxDist = Math.sqrt(centerX*centerX + centerY*centerY);
+        const distRatio = distFromCenter / maxDist;
+        
+        // Particles further from center scatter more
+        const scatterAmount = distRatio * maxDispersion * detailFactor;
+        
+        // Random scatter direction
+        const angle = rand1 * Math.PI * 2;
+        const scatterDist = rand2 * scatterAmount;
+        
+        // 3D depth effect - particles at edges appear to move forward/back
+        const zOffset = (rand3 - 0.5) * maxDispersion * 0.3 * detailFactor;
+        const depthScale = 1 + zOffset / 500; // Perspective scale
+        
+        // New position after dispersion
+        const newX = x + Math.cos(angle) * scatterDist;
+        const newY = y + Math.sin(angle) * scatterDist;
+        
+        // Calculate how far this particle scattered (0 = not scattered, 1 = max scatter)
+        const scatterRatio = Math.min(1, scatterDist / (maxDispersion * detailFactor + 1));
+        
+        // Particle size varies with depth, brightness AND scatter distance
+        // Moderate base size for readability
+        const baseSize = step * 1.0; // Moderate size
+        const sizeVariation = 0.6 + rand3 * 0.8; // 0.6 to 1.4
+        
+        // Smooth size reduction from center to edges
+        const edgeSizeReduction = Math.max(0.1, 1 - Math.pow(scatterRatio, 1.2) * 0.9);
+        
+        const particleSize = Math.max(0.5, baseSize * sizeVariation * depthScale * (0.3 + dark * 0.7) * edgeSizeReduction);
+        
+        // Opacity varies with depth and distance - reduced for transparency
+        const baseAlpha = 0.3 + dark * 0.4; // Lower opacity
+        const depthAlpha = Math.max(0.1, Math.min(1, 1 - Math.abs(zOffset) / (maxDispersion * 0.5)));
+        // Edge particles become more transparent
+        const edgeAlphaReduction = Math.max(0.3, 1 - scatterRatio * 0.7);
+        const alpha = baseAlpha * depthAlpha * edgeAlphaReduction;
+        
+        particles.push({
+          x: newX,
+          y: newY,
+          z: zOffset,
+          size: particleSize,
+          alpha: alpha
+        });
+      }
+    }
+    
+    // Sort particles by z-depth (back to front)
+    particles.sort((a, b) => a.z - b.z);
+    
+    // Draw particles with subtle glow only for larger particles
+    ctx.fillStyle = '#000';
+    for(let p of particles){
+      if(p.alpha < 0.05) continue;
+      
+      // Only add glow to larger particles (center area)
+      if(p.size > 3){
+        ctx.globalAlpha = p.alpha * 0.2; // Subtle outer glow
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Core particle (sharp, no extra layers for small particles)
+      ctx.globalAlpha = p.alpha;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalAlpha = 1.0;
+  }
+  
+  // Event handlers
+  const imgInput = $('#imageInput');
+  imgInput?.addEventListener('change', async (e)=>{
+    const f = e.target.files?.[0];
+    if(!f) return;
+    saveState(); // Save state before loading photo
+    originalPhoto = await createImageBitmap(f);
+    renderPhotomaker();
+    // Show photo settings section
+    $('#photomakerSection').classList.remove('hidden');
+    // Clear input so same file can be loaded again
+    e.target.value = '';
+  });
+  
+  $('#patternSelect')?.addEventListener('change', renderPhotomaker);
+  $('#patternSize')?.addEventListener('input', renderPhotomaker);
+  $('#detailLevel')?.addEventListener('input', renderPhotomaker);
+  $('#invertPattern')?.addEventListener('change', renderPhotomaker);
+  // ========== END PHOTOMAKER ==========
+
+  const overlayEl = document.getElementById('designOverlay');
+  let overlayOn = false;
+  function setOverlay(on){
+    overlayOn = on;
+    overlayEl.style.display = on ? 'block' : 'none';
+  }
+  document.addEventListener('keydown', (e)=>{
+    if((e.key||'').toLowerCase()==='o'){
+      if(!overlayOn){
+        fetch('test.svg').then(res=>{
+          if(res.ok){ return res.text(); }
+          throw new Error('no svg');
+        }).then(svg=>{
+          const blob = new Blob([svg], {type:'image/svg+xml'});
+          overlayEl.style.backgroundImage = `url(${URL.createObjectURL(blob)})`;
+          setOverlay(true);
+        }).catch(()=>{
+          fetch('test.png').then(r=>{
+            if(r.ok){
+              overlayEl.style.backgroundImage = 'url(test.png)';
+              setOverlay(true);
+            } else {
+              alert('Нет test.svg или test.png в папке проекта');
+            }
+          });
+        });
+      } else {
+        setOverlay(false);
+      }
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
