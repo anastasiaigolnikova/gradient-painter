@@ -19,8 +19,11 @@
     }
     .section-title{font-size:24px;line-height:28px;text-align:center;letter-spacing:.02em;font-weight:600;color:#fff;margin:0 0 24px}
     
-    .color-row{display:flex;gap:24px;margin-bottom:16px}
+    .color-row{display:flex;gap:24px;margin-bottom:8px}
     #ui input[type="color"]{appearance:none;border:0;background:none;width:64px;height:22px;padding:0;border-radius:4px;cursor:pointer}
+    .hex-row{display:flex;gap:24px;margin-bottom:16px}
+    .hex-input{width:64px;height:24px;border:1px solid #D9D9D9;background:transparent;color:#D9D9D9;padding:0 6px;font:12px/24px 'Archivo',system-ui;text-transform:uppercase}
+    .hex-input::placeholder{color:#7a7a7a}
     
     .checkbox-row{display:flex;align-items:center;gap:10px;margin:12px 0 24px}
     #ui input[type="checkbox"]{appearance:none;width:16px;height:16px;border:1px solid #D9D9D9;background:transparent;cursor:pointer}
@@ -102,6 +105,11 @@
     
     <div class="section-title">PAINTER</div>
 
+    <div class="hex-row">
+      <input id="hexTop" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
+      <input id="hexMid" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
+      <input id="hexBot" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
+    </div>
     <div class="color-row">
       <input id="cTop" type="color" value="#EA489E"/>
       <input id="cMid" type="color" value="#E9F754"/>
@@ -572,6 +580,37 @@
   // GRAIN checkbox handler
   $('#grain').onchange = ()=> draw();
   
+  // HEX <-> COLOR two-way sync
+  function sanitizeHex(v){
+    if(!v) return '';
+    v = v.trim().toUpperCase();
+    if(v.startsWith('#')) v = v.slice(1);
+    v = v.replace(/[^0-9A-F]/g,'');
+    if(v.length>6) v = v.slice(0,6);
+    return '#' + v;
+  }
+  function attachHexSync(hexId, colorId){
+    const hexEl = document.getElementById(hexId);
+    const colEl = document.getElementById(colorId);
+    // init
+    hexEl.value = (colEl.value||'').toUpperCase();
+    // color -> hex
+    colEl.addEventListener('input', ()=>{ hexEl.value = colEl.value.toUpperCase(); draw(); });
+    // hex -> color
+    const commit = ()=>{
+      const v = sanitizeHex(hexEl.value);
+      hexEl.value = v;
+      if(v.length===7){ colEl.value = v; draw(); }
+    };
+    hexEl.addEventListener('change', commit);
+    hexEl.addEventListener('blur', commit);
+    hexEl.addEventListener('input', ()=>{ const v=sanitizeHex(hexEl.value); hexEl.value=v; if(v.length===7){ colEl.value=v; draw(); }});
+    hexEl.addEventListener('paste', ()=>{ setTimeout(commit,0); });
+  }
+  attachHexSync('hexTop','cTop');
+  attachHexSync('hexMid','cMid');
+  attachHexSync('hexBot','cBot');
+
   // Color pickers handlers
   $('#cTop').oninput = ()=> draw();
   $('#cMid').oninput = ()=> draw();
@@ -1765,4 +1804,3 @@
 </script>
 </body>
 </html>
-
