@@ -97,6 +97,9 @@
       pointer-events:none;
       z-index:1;
     }
+    #photoUi{position:absolute;top:12px;left:12px;z-index:2;display:none}
+    #photoUi .btn-apply{height:32px;padding:0 12px;border:1px solid #D9D9D9;background:#111;color:#D9D9D9;cursor:pointer;font:12px/32px 'Archivo',system-ui;text-transform:uppercase}
+    #photoUi .btn-apply:hover{background:#222}
     .hidden{display:none}
   </style>
 </head>
@@ -166,6 +169,7 @@
     <div id="photomakerSection" class="photomaker hidden">
       <label class="lab" style="margin-top:24px">PHOTO STYLE</label>
       <select id="patternSelect" class="btn" style="width:100%;height:40px;padding:0 12px;text-transform:none;color:#000;background:#fff;border-color:#D9D9D9;margin:8px 0 16px">
+        <option value="none">Original (no filter)</option>
         <option value="dots">Halftone (dots)</option>
         <option value="displace">Displace (3D)</option>
         <option value="weave">Lines</option>
@@ -185,11 +189,13 @@
         <input id="invertPattern" type="checkbox"/>
         <label>INVERT</label>
       </div>
+
+      
     </div>
 
     <button id="download" class="btn-download">DOWNLOAD PNG</button>
   </div>
-  <div id="stage"><canvas id="gl"></canvas></div>
+  <div id="stage"><canvas id="gl"></canvas><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
 </div>
 
 <script>
@@ -493,6 +499,36 @@
   }
 
   canvas.addEventListener('mousedown', (e)=>{ 
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    if(photos.length>0){
+      const handle = hitTestHandles(px, py);
+      if(handle){
+        saveState();
+        isResizingPhoto = true; showPhotoSelection = true; resizeStartScale = (getSelectedPhoto()?.scale)||1;
+        const r = getPhotoRect();
+        resizeStartCenter = {x:r.x + r.w/2, y:r.y + r.h/2};
+        resizeStartDist = Math.max(1, Math.hypot(px-resizeStartCenter.x, py-resizeStartCenter.y));
+        return;
+      }
+      // Try select topmost photo under cursor
+      for(let i=photos.length-1;i>=0;i--){
+        const prev = selectedIndex; selectedIndex = i;
+        const r = getPhotoRect();
+        if(px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h){
+          saveState();
+          isDraggingPhoto = true; showPhotoSelection = true;
+          dragStart = {x:px, y:py};
+          dragStartOffset = {x:photos[i].offsetX||0, y:photos[i].offsetY||0};
+          return;
+        }
+        selectedIndex = prev;
+      }
+      syncUIFromSelected();
+      // Если режим трансформации включен — игнорируем рисование, пока не нажали APPLY
+      if(showPhotoSelection) return;
+    }
     drawing=true; 
     last=mouse(e); 
     strokeId++;
@@ -501,6 +537,7 @@
   });
   
   window.addEventListener('mouseup', ()=> { 
+    if(isDraggingPhoto || isResizingPhoto){ isDraggingPhoto=false; isResizingPhoto=false; /* keep selection visible */ renderPhotomaker(); return; }
     drawing=false;
     draw();
   });
@@ -511,18 +548,31 @@
   });
   
   canvas.addEventListener('mousemove', (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    if(isDraggingPhoto){
+      const sel = getSelectedPhoto();
+      if(sel){
+        sel.offsetX = dragStartOffset.x + (px - dragStart.x);
+        sel.offsetY = dragStartOffset.y + (py - dragStart.y);
+      }
+      renderPhotomaker();
+      return;
+    }
+    if(isResizingPhoto){
+      const dist = Math.max(1, Math.hypot(px-resizeStartCenter.x, py-resizeStartCenter.y));
+      const newScale = Math.min(3, Math.max(0.3, resizeStartScale * (dist/resizeStartDist)));
+      const sel = getSelectedPhoto(); if(sel){ sel.scale = newScale; }
+      renderPhotomaker(); return;
+    }
     if(!drawing) return;
     const cur = mouse(e);
-    
     drawSegment(last, cur);
     last = cur;
-    
     if(!rafScheduled) {
       rafScheduled = true;
-      requestAnimationFrame(()=>{
-        rafScheduled = false;
-        draw();
-      });
+      requestAnimationFrame(()=>{ rafScheduled = false; draw(); });
     }
   });
   canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); brushPx = Math.max(1, Math.min(64, brushPx + (e.deltaY<0?1:-1))); }, {passive:false});
@@ -1159,7 +1209,34 @@
   const offscreen = document.createElement('canvas');
   const offctx = offscreen.getContext('2d', {alpha: false});
   
-  let originalPhoto = null; // ImageBitmap
+  // Multi-photo support
+  let photos = []; // [{image:ImageBitmap, scale:number, offsetX:number, offsetY:number}]
+  let selectedIndex = -1;
+  function getSelectedPhoto(){
+    return (selectedIndex>=0 && selectedIndex<photos.length) ? photos[selectedIndex] : null;
+  }
+  function syncUIFromSelected(){
+    const p = getSelectedPhoto();
+    if(!p) return;
+    const sel = document.getElementById('patternSelect'); if(sel) sel.value = p.pattern || 'none';
+    const sz = document.getElementById('patternSize'); if(sz) sz.value = String(p.size ?? 20);
+    const dl = document.getElementById('detailLevel'); if(dl) dl.value = String(p.detail ?? 50);
+    const inv = document.getElementById('invertPattern'); if(inv) inv.checked = !!p.invert;
+  }
+  let originalPhoto = null; // keep for backward-compat, mirrors selected photo
+  // Transform state (applies to selected photo)
+  let photoScale = 1; // deprecated UI control removed; still used for backward compatibility defaults
+  let photoOffsetX = 0;
+  let photoOffsetY = 0;
+  let isDraggingPhoto = false;
+  let dragStart = {x:0,y:0};
+  let dragStartOffset = {x:0,y:0};
+  // Selection/resize state for photo
+  let showPhotoSelection = false;
+  let isResizingPhoto = false;
+  let resizeStartScale = 1;
+  let resizeStartCenter = {x:0,y:0};
+  let resizeStartDist = 1;
   
   function syncPhotoLayerSize(){
     const pw = canvas.clientWidth, ph = canvas.clientHeight;
@@ -1179,43 +1256,96 @@
     const pw = photoLayer.width, ph = photoLayer.height;
     photoCtx.clearRect(0,0,pw,ph);
     
-    if(!originalPhoto) return;
+    if(photos.length===0) return;
     
     // Вписать фото в offscreen (letterbox fit)
-    const imgW = originalPhoto.width, imgH = originalPhoto.height;
-    const sx = pw / imgW, sy = ph / imgH;
-    const s = Math.min(sx, sy);
-    const fitW = imgW * s, fitH = imgH * s;
-    const ox = (pw - fitW)/2, oy = (ph - fitH)/2;
-    
-    offscreen.width = pw;
-    offscreen.height = ph;
-    offctx.fillStyle = '#fff';
-    offctx.fillRect(0,0,pw,ph);
-    offctx.drawImage(originalPhoto, ox, oy, fitW, fitH);
-    
-    const srcImageData = offctx.getImageData(0,0,pw,ph);
-    const size = parseFloat($('#patternSize')?.value || '20');
-    const detail = parseFloat($('#detailLevel')?.value || '50');
-    const pattern = $('#patternSelect')?.value || 'dots';
-    const invert = $('#invertPattern')?.checked || false;
-    
-    if(pattern === 'dots'){
-      renderDots(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'displace'){
-      renderDisplace(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'weave'){
-      renderWeave(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'shapes'){
-      renderShapes(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'ascii'){
-      renderASCII(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'gradient'){
-      renderGradient(photoCtx, srcImageData, size, detail, pw, ph, invert);
-    } else if(pattern === 'dispersion'){
-      renderDispersion(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    // Per-photo filters
+
+    offscreen.width = pw; offscreen.height = ph;
+    // Draw all photos in order
+    photos.forEach(p=>{
+      const imgW = p.image.width, imgH = p.image.height;
+      const sFit = Math.min(pw/imgW, ph/imgH);
+      const w = imgW * sFit * (p.scale||1);
+      const h = imgH * sFit * (p.scale||1);
+      const x = (pw - w)/2 + (p.offsetX||0);
+      const y = (ph - h)/2 + (p.offsetY||0);
+      const pattern = p.pattern || 'none';
+      const size = p.size ?? 20;
+      const detail = p.detail ?? 50;
+      const invert = !!p.invert;
+      if(pattern === 'none'){
+        photoCtx.drawImage(p.image, x, y, w, h);
+      } else {
+        offctx.fillStyle = '#fff'; offctx.fillRect(0,0,pw,ph);
+        offctx.drawImage(p.image, x, y, w, h);
+        const srcImageData = offctx.getImageData(0,0,pw,ph);
+        if(pattern==='dots') renderDots(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='displace') renderDisplace(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='weave') renderWeave(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='shapes') renderShapes(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='ascii') renderASCII(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='gradient') renderGradient(photoCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='dispersion') renderDispersion(photoCtx, srcImageData, size, detail, pw, ph, invert);
+      }
+    });
+
+    const sel = getSelectedPhoto();
+    if(showPhotoSelection && sel){
+      const imgW = sel.image.width, imgH = sel.image.height;
+      const sFit = Math.min(pw/imgW, ph/imgH);
+      const w = imgW * sFit * (sel.scale||1);
+      const h = imgH * sFit * (sel.scale||1);
+      const x = (pw - w)/2 + (sel.offsetX||0);
+      const y = (ph - h)/2 + (sel.offsetY||0);
+      drawSelection(photoCtx, x, y, w, h);
+      document.getElementById('photoUi').style.display='block';
+    } else {
+      document.getElementById('photoUi').style.display='none';
     }
   }
+
+  function getPhotoRect(){
+    const sel = getSelectedPhoto();
+    if(!sel) return null;
+    const pw = photoLayer.width, ph = photoLayer.height;
+    const imgW = sel.image.width, imgH = sel.image.height;
+    const s = Math.min(pw/imgW, ph/imgH);
+    const w = imgW * s * (sel.scale||1), h = imgH * s * (sel.scale||1);
+    const x = (pw - w)/2 + (sel.offsetX||0), y = (ph - h)/2 + (sel.offsetY||0);
+    return {x,y,w,h};
+  }
+
+  function drawSelection(ctx, x, y, w, h){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6,4]);
+    ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+    ctx.setLineDash([]);
+    const s = 12; // handle size
+    const handles = [
+      {x:x, y:y}, {x:x+w-s, y:y}, {x:x, y:y+h-s}, {x:x+w-s, y:y+h-s}
+    ];
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#000';
+    handles.forEach(p=>{ ctx.fillRect(p.x, p.y, s, s); ctx.strokeRect(p.x+0.5,p.y+0.5,s-1,s-1); });
+    ctx.restore();
+  }
+
+  function hitTestHandles(px, py){
+    const r = getPhotoRect(); if(!r) return null;
+    const s = 18; // larger hit area
+    const handles = [
+      {id:'nw', x:r.x, y:r.y},
+      {id:'ne', x:r.x+r.w-s, y:r.y},
+      {id:'sw', x:r.x, y:r.y+r.h-s},
+      {id:'se', x:r.x+r.w-s, y:r.y+r.h-s}
+    ];
+    for(const h of handles){ if(px>=h.x && px<=h.x+s && py>=h.y && py<=h.y+s) return h.id; }
+    return null;
+  }
+  function pointInRect(px, py){ const r=getPhotoRect(); if(!r) return false; return px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h; }
   
   function renderDots(ctx, imgData, size, detail, w, h, invert){
     ctx.fillStyle = '#000';
@@ -1246,10 +1376,14 @@
         const brightness = invert ? avgGray : (255 - avgGray);
         const dark = 1 - brightness/255;
         const detailFactor = (detail - 10)/(90-10);
-        const minRad = detailFactor * 0.05;
-        const maxRad = 0.5;
-        const r = step * (minRad + dark*(maxRad - minRad));
-        if(r>0.5){
+        const sizeAmplifier = 0.5 + detailFactor*2.0; // заметная реакция на STRENGTH
+        const minRad = 0.04;
+        const maxRad = 0.35 * sizeAmplifier; // 0.175..0.875 от шага
+        const gamma = 1.8 - detailFactor*1.5; // 1.8 (мягко) → 0.3 (жестко)
+        const darkAdjusted = Math.pow(dark, Math.max(0.3, gamma));
+        const r = step * (minRad + darkAdjusted*(maxRad - minRad));
+        const drawThreshold = step * (0.1 + (1 - detailFactor)*0.4); // 0.5*step → 0.1*step
+        if(r>drawThreshold){
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI*2);
           ctx.fill();
@@ -1754,7 +1888,18 @@
     const f = e.target.files?.[0];
     if(!f) return;
     saveState(); // Save state before loading photo
-    originalPhoto = await createImageBitmap(f);
+    const bmp = await createImageBitmap(f);
+    // push into photos (max 12)
+    if(photos.length >= 12) photos.shift();
+    photos.push({image:bmp, scale:1, offsetX:0, offsetY:0, pattern:'none', size:20, detail:50, invert:false});
+    selectedIndex = photos.length - 1;
+    originalPhoto = bmp;
+    // Default to no filter on load
+    const sel = document.getElementById('patternSelect');
+    if(sel) sel.value = 'none';
+    // Reset transforms
+    photoScale = 1; photoOffsetX = 0; photoOffsetY = 0;
+    syncUIFromSelected();
     renderPhotomaker();
     // Show photo settings section
     $('#photomakerSection').classList.remove('hidden');
@@ -1762,10 +1907,24 @@
     e.target.value = '';
   });
   
-  $('#patternSelect')?.addEventListener('change', renderPhotomaker);
-  $('#patternSize')?.addEventListener('input', renderPhotomaker);
-  $('#detailLevel')?.addEventListener('input', renderPhotomaker);
-  $('#invertPattern')?.addEventListener('change', renderPhotomaker);
+  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; renderPhotomaker(); });
+  $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
+  $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
+  $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.invert = $('#invertPattern').checked; renderPhotomaker(); });
+  // removed photoScale slider listener (scaling now on-canvas)
+
+  // (удалены глобальные обработчики stage/mousemove для предотвращения дребезга)
+
+  // APPLY button: bake current photo into the offscreen texture and disable selection
+  document.getElementById('applyPhoto')?.addEventListener('click', ()=>{
+    if(photos.length===0) return;
+    showPhotoSelection = false; isDraggingPhoto=false; isResizingPhoto=false;
+    // Скрыть UI
+    document.getElementById('photoUi').style.display='none';
+    // Сбросить флаги рисования, чтобы кисть не залипала
+    drawing = false;
+    renderPhotomaker();
+  });
   // ========== END PHOTOMAKER ==========
 
   const overlayEl = document.getElementById('designOverlay');
