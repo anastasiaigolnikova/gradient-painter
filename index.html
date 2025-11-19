@@ -116,7 +116,7 @@
       <input id="hexBot" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
       <input id="cTop" type="color" value="#EA489E"/>
       <input id="cMid" type="color" value="#E9F754"/>
-      <input id="cBot" type="color" value="#233FF5"/>
+      <input id="cBot" type="color" value="#000000"/>
     </div>
 
     <label class="range">
@@ -190,6 +190,35 @@
         <label>INVERT</label>
       </div>
 
+      <div id="animationControls" style="display:none">
+        <div class="checkbox-row" style="margin:8px 0 8px">
+          <input id="animateFilter" type="checkbox"/>
+          <label>ANIMATE</label>
+        </div>
+        <label class="lab">SPEED</label>
+        <label class="range"><input id="animSpeed" type="range" min="0.2" max="3" step="0.1" value="1"/></label>
+
+        <label class="lab">ANIMATION MODE</label>
+        <select id="animMode" class="btn" style="width:100%;height:40px;padding:0 12px;text-transform:none;color:#000;background:#fff;border-color:#D9D9D9;margin:8px 0 8px">
+          <option value="flow">Flow</option>
+          <option value="wave">Wave</option>
+          <option value="shuffle">Shuffle</option>
+        </select>
+        <label class="lab">AMPLITUDE</label>
+        <label class="range"><input id="animAmp" type="range" min="0" max="1" step="0.01" value="0.30"/></label>
+        <label class="lab">FREQUENCY</label>
+        <label class="range"><input id="animFreq" type="range" min="0.5" max="3" step="0.05" value="1.20"/></label>
+      </div>
+
+      <div style="margin-top:16px">
+        <button id="exportVideo" class="btn" style="width:100%;justify-content:center;display:none">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter">
+            <rect x="2" y="5" width="20" height="14" rx="2"/>
+            <path d="M8 12l5-3v6l-5-3z"/>
+          </svg>
+          RECORD VIDEO (5s)
+        </button>
+      </div>
       
     </div>
 
@@ -410,6 +439,13 @@
   let drawing=false; let last=null; let strokeId=1; let brushPx=1.0;
   let rafScheduled = false;
   let svgLoaded = false;
+  // Animation state for filters
+  let filtersAnimated = false;
+  let animSpeed = 1;
+  let animStart = performance.now();
+  let animMode = 'flow';
+  let animAmp = 0.30; // 0..1
+  let animFreq = 1.20; // Hz base
   
   // History stack for undo functionality
   let historyStack = [];
@@ -580,13 +616,13 @@
     svgLoaded = false;
     initState(); 
     draw(); 
-    // Also clear photo layer
-    if(originalPhoto) {
+    // Clear all photos
+    photos = [];
+    selectedIndex = -1;
       originalPhoto = null;
       photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
       // Hide photo settings section when photo is cleared
       $('#photomakerSection').classList.add('hidden');
-    }
   };
   $('#download').onclick = ()=>{
     // Create temp canvas with the actual display size
@@ -660,7 +696,7 @@
   attachHexSync('hexTop','cTop');
   attachHexSync('hexMid','cMid');
   attachHexSync('hexBot','cBot');
-
+  
   // Color pickers handlers
   $('#cTop').oninput = ()=> draw();
   $('#cMid').oninput = ()=> draw();
@@ -1204,10 +1240,14 @@
   const photoLayer = document.createElement('canvas');
   photoLayer.id = 'photoLayer';
   stage.appendChild(photoLayer);
-  const photoCtx = photoLayer.getContext('2d', {alpha: true});
+  const photoCtx = photoLayer.getContext('2d', {alpha: true, willReadFrequently: true});
   
   const offscreen = document.createElement('canvas');
-  const offctx = offscreen.getContext('2d', {alpha: false});
+  const offctx = offscreen.getContext('2d', {alpha: false, willReadFrequently: true});
+  
+  // Intermediate canvas for post-processing animation effects
+  const animCanvas = document.createElement('canvas');
+  const animCtx = animCanvas.getContext('2d', {alpha: true, willReadFrequently: true});
   
   // Multi-photo support
   let photos = []; // [{image:ImageBitmap, scale:number, offsetX:number, offsetY:number}]
@@ -1222,6 +1262,7 @@
     const sz = document.getElementById('patternSize'); if(sz) sz.value = String(p.size ?? 20);
     const dl = document.getElementById('detailLevel'); if(dl) dl.value = String(p.detail ?? 50);
     const inv = document.getElementById('invertPattern'); if(inv) inv.checked = !!p.invert;
+    syncAnimControlsForPattern();
   }
   let originalPhoto = null; // keep for backward-compat, mirrors selected photo
   // Transform state (applies to selected photo)
@@ -1262,7 +1303,13 @@
     // Per-photo filters
 
     offscreen.width = pw; offscreen.height = ph;
+    animCanvas.width = pw; animCanvas.height = ph;
+    
     // Draw all photos in order
+    // Use synthetic time during recording for smooth video, real time otherwise
+    const tSec = isRecording ? syntheticTime : (performance.now()-animStart)/1000;
+    const t = tSec * Math.max(0.2,animSpeed);
+    
     photos.forEach(p=>{
       const imgW = p.image.width, imgH = p.image.height;
       const sFit = Math.min(pw/imgW, ph/imgH);
@@ -1274,19 +1321,31 @@
       const size = p.size ?? 20;
       const detail = p.detail ?? 50;
       const invert = !!p.invert;
+      
       if(pattern === 'none'){
         photoCtx.drawImage(p.image, x, y, w, h);
       } else {
+        // Render filter to intermediate canvas WITHOUT animation
+        animCtx.clearRect(0,0,pw,ph);
         offctx.fillStyle = '#fff'; offctx.fillRect(0,0,pw,ph);
         offctx.drawImage(p.image, x, y, w, h);
-        const srcImageData = offctx.getImageData(0,0,pw,ph);
-        if(pattern==='dots') renderDots(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='displace') renderDisplace(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='weave') renderWeave(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='shapes') renderShapes(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='ascii') renderASCII(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='gradient') renderGradient(photoCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='dispersion') renderDispersion(photoCtx, srcImageData, size, detail, pw, ph, invert);
+    const srcImageData = offctx.getImageData(0,0,pw,ph);
+        
+        // All filters now render staticaly to animCanvas
+        if(pattern==='dots') renderDots(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='displace') renderDisplace(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='weave') renderWeave(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='shapes') renderShapes(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='ascii') renderASCII(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='gradient') renderGradient(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
+        
+        // Apply universal animation post-processing
+        if(filtersAnimated){
+          applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+        } else {
+          photoCtx.drawImage(animCanvas, 0, 0);
+        }
       }
     });
 
@@ -1303,6 +1362,400 @@
     } else {
       document.getElementById('photoUi').style.display='none';
     }
+  }
+
+  // Show/hide animation controls based on pattern (only for Halftone/dots)
+  function syncAnimControlsForPattern(){
+    const p = getSelectedPhoto();
+    const animContainer = document.getElementById('animationControls');
+    const modeSel = document.getElementById('animMode');
+    
+    if(!animContainer || !modeSel) return;
+    
+    // Show animation controls ONLY for Halftone (dots)
+    if(p && p.pattern === 'dots'){
+      animContainer.style.display = 'block';
+      modeSel.disabled = false;
+      modeSel.style.opacity = '';
+      modeSel.style.pointerEvents = '';
+    } else {
+      // Hide for all other patterns (including 'none' and when no photo selected)
+      animContainer.style.display = 'none';
+      // Also disable animation if it was on
+      if(filtersAnimated){
+        filtersAnimated = false;
+        const animCheckbox = document.getElementById('animateFilter');
+        if(animCheckbox) animCheckbox.checked = false;
+      }
+    }
+  }
+
+  // Animation loop for filters
+  function tickFilters(){
+    if(filtersAnimated){ 
+      // DEBUG: Log once per second with timestamp to prevent grouping
+      const now = Date.now();
+      if(!window._lastDebugTime || now - window._lastDebugTime > 1000){
+        window._lastDebugTime = now;
+        const selectedPhoto = getSelectedPhoto();
+        console.log('═══════════════════════════════════════');
+        console.log('⏰ Time:', new Date().toLocaleTimeString());
+        console.log('📊 filtersAnimated:', filtersAnimated);
+        console.log('🎬 animMode:', animMode);
+        console.log('🎨 pattern:', selectedPhoto?.pattern || 'none');
+        console.log('⚡ animSpeed:', animSpeed);
+        console.log('📐 animAmp:', animAmp);
+        console.log('📡 animFreq:', animFreq);
+        console.log('═══════════════════════════════════════');
+      }
+      renderPhotomaker(); 
+      requestAnimationFrame(tickFilters); 
+    }
+  }
+  
+  // Universal animation post-processing: applies Flow/Wave/Reveal to ANY filter result
+  function applyAnimationEffect(destCtx, sourceCanvas, w, h, t, tSec){
+    const pattern = getSelectedPhoto()?.pattern || 'none';
+    
+    // Special handling for Halftone (dots) - custom organic animation
+    if(pattern === 'dots'){
+      applyDotsAnimation(destCtx, sourceCanvas, w, h, t, tSec);
+      return;
+    }
+    // Special handling for Displace (3D) - shuffle/particles
+    if(pattern === 'displace'){
+      applyDisplaceAnimation(destCtx, sourceCanvas, w, h, t, tSec);
+      return;
+    }
+    
+    // Generic post-processing for other filters
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    
+    destCtx.clearRect(0,0,w,h);
+    
+    if(animMode === 'flow'){
+      // Flow: волновое искажение по всему полю
+      for(let y=0; y<h; y++){
+        for(let x=0; x<w; x++){
+          const wave = Math.sin((x*0.02 + y*0.02) + t*animFreq) * animAmp * 20;
+          const srcX = Math.floor(x + wave);
+          const srcY = Math.floor(y + wave*0.5);
+          if(srcX>=0 && srcX<w && srcY>=0 && srcY<h){
+            const si = (srcY*w + srcX)*4;
+            const di = (y*w + x)*4;
+            data[di] = imgData.data[si];
+            data[di+1] = imgData.data[si+1];
+            data[di+2] = imgData.data[si+2];
+            data[di+3] = imgData.data[si+3];
+          }
+        }
+      }
+      destCtx.putImageData(imgData, 0, 0);
+    } else if(animMode === 'wave'){
+      // Wave: вертикальная волна (сдвиг строк)
+      for(let y=0; y<h; y++){
+        const shift = Math.sin((y/h)*Math.PI*2 + t*animFreq*1.5) * animAmp * 30;
+        for(let x=0; x<w; x++){
+          const srcX = Math.floor(x + shift);
+          if(srcX>=0 && srcX<w){
+            const si = (y*w + srcX)*4;
+            const di = (y*w + x)*4;
+            data[di] = imgData.data[si];
+            data[di+1] = imgData.data[si+1];
+            data[di+2] = imgData.data[si+2];
+            data[di+3] = imgData.data[si+3];
+          }
+        }
+      }
+      destCtx.putImageData(imgData, 0, 0);
+    }
+  }
+  
+  // Global storage for dots metadata (built once per render)
+  let dotsMetadata = [];
+  // Global storage for Displace (3D) particles metadata
+  let displaceMetadata = [];
+  // Shuffle animation integrator (time-accumulated for stable SPEED control)
+  let shufflePhase = 0; // accumulated seconds scaled by SPEED
+  let shufflePrevTSec = 0; // last tSec seen
+  // Separate integrator for Displace animation to avoid interference
+  let shufflePhaseDisplace = 0;
+  let shufflePrevTSecDisplace = 0;
+  
+  // Custom animation for Halftone (dots) inspired by Pixeldance/Inscript
+  function applyDotsAnimation(destCtx, sourceCanvas, w, h, t, tSec){
+    // DEBUG: Always log when this function is called
+    if(!window._applyDotsCounter) window._applyDotsCounter = 0;
+    window._applyDotsCounter++;
+    if(window._applyDotsCounter % 60 === 0){
+      console.log('🔵 applyDotsAnimation called! animMode =', animMode);
+    }
+    
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    destCtx.clearRect(0,0,w,h);
+    
+    if(animMode === 'flow'){
+      // Flow: Organic breathing with multi-layered sine waves (Pixeldance style)
+      const tempData = new Uint8ClampedArray(data);
+      for(let y=0; y<h; y++){
+        for(let x=0; x<w; x++){
+          // Multiple overlapping sine waves for organic feel
+          const wave1 = Math.sin((x*0.015 + y*0.01) + t*animFreq) * animAmp * 15;
+          const wave2 = Math.sin((x*0.01 - y*0.015) + t*animFreq*1.3 + 1.5) * animAmp * 10;
+          const wave3 = Math.sin((x*0.02 + y*0.02) + t*animFreq*0.7 + 3) * animAmp * 8;
+          const totalWave = wave1 + wave2 + wave3;
+          
+          const srcX = Math.round(x + totalWave);
+          const srcY = Math.round(y + totalWave*0.3);
+          
+          if(srcX>=0 && srcX<w && srcY>=0 && srcY<h){
+            const si = (srcY*w + srcX)*4;
+            const di = (y*w + x)*4;
+            tempData[di] = data[si];
+            tempData[di+1] = data[si+1];
+            tempData[di+2] = data[si+2];
+            tempData[di+3] = data[si+3];
+          }
+        }
+      }
+      const newImg = new ImageData(tempData, w, h);
+      destCtx.putImageData(newImg, 0, 0);
+      
+    } else if(animMode === 'wave'){
+      // Wave: Datamosh/Glitch - vertical strips with random displacement
+      const tempData = new Uint8ClampedArray(data);
+      const stripWidth = Math.max(2, Math.floor(w * 0.02)); // 2% of width per strip
+      
+      for(let x=0; x<w; x+=stripWidth){
+        // Random glitch intensity per strip
+        const seed = Math.floor(x/stripWidth + t*animFreq*10);
+        const glitchAmt = (Math.sin(seed*1.234)*0.5 + 0.5) * animAmp;
+        const shift = Math.floor((Math.sin(seed*2.345 + t*animFreq*2)*0.5 + 0.5) * 60 * glitchAmt - 30*glitchAmt);
+        
+        for(let y=0; y<h; y++){
+          for(let dx=0; dx<stripWidth && x+dx<w; dx++){
+            const srcY = y + shift;
+            if(srcY>=0 && srcY<h){
+              const si = (srcY*w + (x+dx))*4;
+              const di = (y*w + (x+dx))*4;
+              tempData[di] = data[si];
+              tempData[di+1] = data[si+1];
+              tempData[di+2] = data[si+2];
+              tempData[di+3] = data[si+3];
+            }
+          }
+        }
+      }
+      const newImg = new ImageData(tempData, w, h);
+      destCtx.putImageData(newImg, 0, 0);
+    } else if(animMode === 'shuffle'){
+      // Shuffle: Snake-pattern circulation (ДРОН algorithm)
+      // Uses pre-computed dots metadata from renderDots
+      
+      if(dotsMetadata.length < 2){
+        // Fallback: no dots metadata available
+        destCtx.putImageData(imgData, 0, 0);
+        return;
+      }
+      
+      // Build snake route from dots metadata
+      // 1. Sort by position: left-to-right, top-to-bottom
+      const sorted = dotsMetadata.slice().sort((a,b)=> a.y===b.y ? a.x-b.x : a.y-b.y);
+      
+      // 2. Group into rows
+      const rows = [];
+      let currentRow = [];
+      let lastY = sorted[0].y;
+      const rowThreshold = 10; // pixels tolerance for same row
+      
+      sorted.forEach(d=>{
+        if(Math.abs(d.y - lastY) > rowThreshold){
+          if(currentRow.length) rows.push(currentRow);
+          currentRow = [d];
+          lastY = d.y;
+        } else {
+          currentRow.push(d);
+        }
+      });
+      if(currentRow.length) rows.push(currentRow);
+      
+      // 3. Create snake pattern: alternate row directions
+      const snake = [];
+      rows.forEach((row, i)=>{
+        snake.push(...(i%2===0 ? row : row.reverse()));
+      });
+      
+      // 4. Build anchor positions and routing
+      const anchors = snake.map(d => ({x: d.x, y: d.y}));
+      const routePos = new Array(snake.length);
+      snake.forEach((d, i)=> routePos[i] = i);
+      
+      // 5. Calculate rotation using an explicit integrator so SPEED always works
+      const baseSpeed = 0.004; // very slow base linear speed (cycles/sec at SPEED=1)
+      if (shufflePrevTSec === 0) shufflePrevTSec = tSec;
+      const dtSec = Math.max(0, tSec - shufflePrevTSec);
+      shufflePrevTSec = tSec;
+      // accumulate phase (seconds) scaled by SPEED
+      shufflePhase += dtSec * Math.max(0.2, animSpeed) * baseSpeed; // cycles
+      const continuousRotation = (shufflePhase * anchors.length) % anchors.length;
+      
+      // Split into integer and fractional parts
+      const rotationInt = Math.floor(continuousRotation);
+      const rotationFrac = continuousRotation - rotationInt;
+      
+      // Smooth easing for the fractional part (makes transitions buttery smooth)
+      const ease = x => x<0.5 ? 2*x*x : 1-Math.pow(-2*x+2,2)/2; // ease-in-out-quad (gentler than cubic)
+      const smoothT = ease(rotationFrac);
+      
+      // 7. Calculate curve amount - AMPLITUDE controls the bulge/curve of trajectories
+      // Increased range for more visible effect (0→0px, 1→60px)
+      const curveAmount = animAmp * 60; // shape only; must not change speed
+      
+      // NEW: Dispersion effect based on frequency
+      // Higher frequency = more scatter/dispersion (распыление)
+      const dispersionAmount = (animFreq - 0.5) * 40; // 0.5→0px, 3.0→100px max scatter
+      const dispersionActive = animFreq > 0.8; // Only activate dispersion when freq > 0.8
+      
+      // 8. Draw each dot in its animated position
+      destCtx.fillStyle = '#000';
+      
+      snake.forEach((dot, originalIdx)=>{
+        // Find current and next target positions (continuous interpolation)
+        const currentPos = (originalIdx + rotationInt) % anchors.length;
+        const nextPos = (originalIdx + rotationInt + 1) % anchors.length;
+        
+        const fromX = anchors[currentPos].x;
+        const fromY = anchors[currentPos].y;
+        const toX = anchors[nextPos].x;
+        const toY = anchors[nextPos].y;
+        
+        // Linear interpolation with smooth easing
+        const cx = fromX + (toX - fromX) * smoothT;
+        const cy = fromY + (toY - fromY) * smoothT;
+        
+        // Add perpendicular bulge (sine wave curve)
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len; // perpendicular normal
+        const ny = dx / len;
+        const bulge = Math.sin(smoothT * Math.PI) * curveAmount;
+        
+        let finalX = cx + nx * bulge;
+        let finalY = cy + ny * bulge;
+        
+        // Apply dispersion effect (scatter) based on frequency
+        if(dispersionActive && dispersionAmount > 0){
+          // Use dot index as seed for consistent random scatter per dot
+          const seed1 = originalIdx * 12.9898 + t * 0.5; // use speed-adjusted time
+          const seed2 = originalIdx * 78.233 + t * 0.5;
+          const pseudoRandX = Math.sin(seed1) * 43758.5453;
+          const pseudoRandY = Math.sin(seed2) * 43758.5453;
+          const randX = (pseudoRandX - Math.floor(pseudoRandX)) * 2 - 1; // -1 to 1
+          const randY = (pseudoRandY - Math.floor(pseudoRandY)) * 2 - 1; // -1 to 1
+          
+          // Oscillating dispersion (breathing effect)
+          const dispersionPhase = Math.sin(t * animFreq * 2 + originalIdx * 0.1) * 0.5 + 0.5; // 0 to 1, tied to SPEED
+          const currentDispersion = dispersionAmount * dispersionPhase;
+          
+          finalX += randX * currentDispersion;
+          finalY += randY * currentDispersion;
+        }
+        
+        // Draw dot with ORIGINAL radius (no size change!)
+        destCtx.beginPath();
+        destCtx.arc(finalX, finalY, dot.r, 0, Math.PI * 2);
+        destCtx.fill();
+      });
+    }
+  }
+
+  // Shuffle-style particle animation for Displace (3D)
+  function applyDisplaceAnimation(destCtx, sourceCanvas, w, h, t, tSec){
+    // Fallback if no metadata
+    if(displaceMetadata.length < 2){
+      destCtx.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+
+    // Build snake route by rows (top-to-bottom, alternating left-right)
+    const sorted = displaceMetadata.slice().sort((a,b)=> a.y===b.y ? a.x-b.x : a.y-b.y);
+    const rows = [];
+    let currentRow = [];
+    let lastY = sorted[0].y;
+    const rowThreshold = 12; // pixels tolerance between rows
+    sorted.forEach(p=>{
+      if(Math.abs(p.y - lastY) > rowThreshold){
+        if(currentRow.length) rows.push(currentRow);
+        currentRow = [p];
+        lastY = p.y;
+      } else {
+        currentRow.push(p);
+      }
+    });
+    if(currentRow.length) rows.push(currentRow);
+    const snake = [];
+    rows.forEach((row, i)=>{ snake.push(...(i%2===0 ? row : row.reverse())); });
+
+    const anchors = snake.map(d => ({x:d.x, y:d.y}));
+    if(anchors.length < 2){ destCtx.drawImage(sourceCanvas,0,0); return; }
+
+    // Integrator: make SPEED work reliably
+    const baseSpeed = 0.004;
+    if (shufflePrevTSecDisplace === 0) shufflePrevTSecDisplace = tSec;
+    const dtSec = Math.max(0, tSec - shufflePrevTSecDisplace);
+    shufflePrevTSecDisplace = tSec;
+    shufflePhaseDisplace += dtSec * Math.max(0.2, animSpeed) * baseSpeed; // cycles
+    const continuousRotation = (shufflePhaseDisplace * anchors.length) % anchors.length;
+    const rotationInt = Math.floor(continuousRotation);
+    const rotationFrac = continuousRotation - rotationInt;
+    const ease = x => x<0.5 ? 2*x*x : 1-Math.pow(-2*x+2,2)/2;
+    const smoothT = ease(rotationFrac);
+
+    const curveAmount = animAmp * 60;
+    const dispersionAmount = (animFreq - 0.5) * 40;
+    const dispersionActive = animFreq > 0.8;
+
+    destCtx.clearRect(0,0,w,h);
+    destCtx.fillStyle = '#000';
+
+    snake.forEach((dot, originalIdx)=>{
+      const currentPos = (originalIdx + rotationInt) % anchors.length;
+      const nextPos = (originalIdx + rotationInt + 1) % anchors.length;
+      const fromX = anchors[currentPos].x, fromY = anchors[currentPos].y;
+      const toX = anchors[nextPos].x, toY = anchors[nextPos].y;
+      const cx = fromX + (toX-fromX)*smoothT;
+      const cy = fromY + (toY-fromY)*smoothT;
+      const dx = toX-fromX, dy = toY-fromY;
+      const len = Math.hypot(dx,dy)||1;
+      const nx = -dy/len, ny = dx/len;
+      const bulge = Math.sin(smoothT*Math.PI) * curveAmount;
+      let finalX = cx + nx*bulge;
+      let finalY = cy + ny*bulge;
+
+      if(dispersionActive && dispersionAmount>0){
+        const seed1 = originalIdx * 12.9898 + t * 0.5;
+        const seed2 = originalIdx * 78.233 + t * 0.5;
+        const prx = Math.sin(seed1) * 43758.5453;
+        const pry = Math.sin(seed2) * 43758.5453;
+        const randX = (prx - Math.floor(prx)) * 2 - 1;
+        const randY = (pry - Math.floor(pry)) * 2 - 1;
+        const dispersionPhase = Math.sin(t * animFreq * 2 + originalIdx * 0.1) * 0.5 + 0.5;
+        const currentDispersion = dispersionAmount * dispersionPhase;
+        finalX += randX * currentDispersion;
+        finalY += randY * currentDispersion;
+      }
+
+      // Draw with original alpha
+      const prevAlpha = destCtx.globalAlpha;
+      destCtx.globalAlpha = Math.max(0, Math.min(1, dot.a ?? 1));
+      destCtx.beginPath();
+      destCtx.arc(finalX, finalY, dot.r, 0, Math.PI*2);
+      destCtx.fill();
+      destCtx.globalAlpha = prevAlpha;
+    });
   }
 
   function getPhotoRect(){
@@ -1352,6 +1805,9 @@
     const step = Math.max(4, size);
     const data = imgData.data;
     
+    // Clear metadata for new render
+    dotsMetadata = [];
+    
     for(let y=step/2; y<h; y+=step){
       for(let x=step/2; x<w; x+=step){
         let sumBright = 0, count=0;
@@ -1376,17 +1832,24 @@
         const brightness = invert ? avgGray : (255 - avgGray);
         const dark = 1 - brightness/255;
         const detailFactor = (detail - 10)/(90-10);
-        const sizeAmplifier = 0.5 + detailFactor*2.0; // заметная реакция на STRENGTH
+        const sizeAmplifier = 0.5 + detailFactor*2.0;
         const minRad = 0.04;
-        const maxRad = 0.35 * sizeAmplifier; // 0.175..0.875 от шага
-        const gamma = 1.8 - detailFactor*1.5; // 1.8 (мягко) → 0.3 (жестко)
+        const maxRad = 0.35 * sizeAmplifier;
+        const gamma = 1.8 - detailFactor*1.5;
         const darkAdjusted = Math.pow(dark, Math.max(0.3, gamma));
         const r = step * (minRad + darkAdjusted*(maxRad - minRad));
-        const drawThreshold = step * (0.1 + (1 - detailFactor)*0.4); // 0.5*step → 0.1*step
+        const drawThreshold = step * (0.1 + (1 - detailFactor)*0.4);
         if(r>drawThreshold){
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI*2);
           ctx.fill();
+          
+          // Store metadata for animation
+          dotsMetadata.push({
+            x: x,
+            y: y,
+            r: r
+          });
         }
       }
     }
@@ -1397,11 +1860,13 @@
     const detailFactor = (detail - 10)/(90-10);
     const step = Math.max(4, size);
     const dotSize = Math.max(2, size * 0.4);
+    // Reset metadata for Displace animation each render
+    displaceMetadata = [];
     
     // Get gradient colors from the UI
     const colorTop = $('#cTop')?.value || '#EA489E';
     const colorMid = $('#cMid')?.value || '#E9F754';
-    const colorBot = $('#cBot')?.value || '#233FF5';
+    const colorBot = $('#cBot')?.value || '#000000';
     const midPos = parseFloat($('#midPos')?.value || '0.5');
     
     // Helper to parse hex color to RGB
@@ -1429,10 +1894,22 @@
     const maxDisplacement = detail * 2.5; // 25-225 pixels
     
     // Perspective and rotation amount (higher STRENGTH = more rotation)
-    const rotationFactor = detailFactor; // 0 to 1
-    const skewAmount = rotationFactor * 200; // Max 200px horizontal skew
+    const baseRotation = detailFactor;
+    const skewAmount = baseRotation * 200; // Max 200px horizontal skew
     
-    // Draw dots with displacement (3D effect with rotation)
+    // Helper: sample grayscale safely
+    function grayAt(px, py){
+      const ix = Math.max(0, Math.min(w-1, px|0));
+      const iy = Math.max(0, Math.min(h-1, py|0));
+      const ii = (iy*w + ix)*4;
+      return data[ii]*0.299 + data[ii+1]*0.587 + data[ii+2]*0.114;
+    }
+    // Light direction (fake 3D shading)
+    const Lx = -0.4, Ly = -0.8, Lz = 0.4; // normalized approximately
+    const Llen = Math.hypot(Lx,Ly,Lz)||1;
+    const Lnx = Lx/Llen, Lny = Ly/Llen, Lnz = Lz/Llen;
+
+    // Draw dots with displacement (3D effect with rotation + shading)
     for(let y=step/2; y<h; y+=step){
       for(let x=step/2; x<w; x+=step){
         // Sample brightness
@@ -1466,11 +1943,9 @@
         const xNorm = (x - w/2) / (w/2); // -1 to 1 (left to right from center)
         
         // 3D rotation around vertical axis (Y-axis)
-        // Left side (x < center) comes forward, right side goes back
-        // This creates perspective foreshortening
-        
+        const rotationFactor = baseRotation;
         // Calculate how much the right side compresses (perspective)
-        const perspectiveScale = 1 - rotationFactor * 0.6; // Right side shrinks to 40% when fully rotated
+        const perspectiveScale = 1 - rotationFactor * 0.6; // Right side shrinks when rotated
         
         // For each point, apply perspective based on its X position
         // Left side (xNorm = -1) stays at full width
@@ -1493,17 +1968,36 @@
         const newX = baseX + displaceX;
         const newY = baseY + displaceY;
         
+        // Estimate local normal from image gradient to fake volume
+        let gx = grayAt(x+1, y) - grayAt(x-1, y);
+        let gy = grayAt(x, y+1) - grayAt(x, y-1);
+        // Normal toward viewer (Z positive)
+        let nx = -gx/255, ny = -gy/255, nz = 1.0;
+        const nlen = Math.hypot(nx,ny,nz)||1; nx/=nlen; ny/=nlen; nz/=nlen;
+        let lambert = Math.max(0, nx*Lnx + ny*Lny + nz*Lnz);
+        lambert = 0.35 + lambert*0.65; // keep some ambient
+        
         // Vary dot size based on brightness, perspective AND rotation
         const depthFactor = 1 - yNorm * 0.3 - Math.abs(xNorm) * rotationFactor * 0.4; // Further = smaller
         const baseDotSize = dotSize * (0.4 + dark * 0.6);
-        const r = baseDotSize * Math.max(0.3, depthFactor); // Don't go too small
+        const r = baseDotSize * Math.max(0.3, depthFactor) * (0.9 + 0.3*lambert); // pseudo volume
         
-        // Draw dot with black color, alpha affected by depth
-        const alpha = (0.75 + dark * 0.25) * Math.max(0.4, depthFactor);
+        // Draw dot with black color, alpha affected by depth and light
+        const alpha = (0.7 + dark * 0.3) * Math.max(0.4, depthFactor) * lambert;
+        // subtle highlight halo
+        if(r>2){
+          ctx.fillStyle = `rgba(0,0,0,${alpha*0.3})`;
+          ctx.beginPath();
+          ctx.arc(newX, newY, r*1.2, 0, Math.PI*2);
+          ctx.fill();
+        }
         ctx.fillStyle = `rgba(0,0,0,${alpha})`;
         ctx.beginPath();
         ctx.arc(newX, newY, r, 0, Math.PI*2);
         ctx.fill();
+
+        // Save particle for animation
+        displaceMetadata.push({ x:newX, y:newY, r, a:alpha });
       }
     }
   }
@@ -1907,10 +2401,149 @@
     e.target.value = '';
   });
   
-  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; renderPhotomaker(); });
+  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); });
   $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
   $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
   $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.invert = $('#invertPattern').checked; renderPhotomaker(); });
+  $('#animateFilter')?.addEventListener('change', ()=>{ 
+    filtersAnimated = $('#animateFilter').checked; 
+    animStart = performance.now(); 
+    if(filtersAnimated){ 
+      requestAnimationFrame(tickFilters); 
+      // Show video export button when animation is on
+      $('#exportVideo').style.display = 'flex';
+    } else {
+      $('#exportVideo').style.display = 'none';
+    }
+    renderPhotomaker(); 
+  });
+  $('#animSpeed')?.addEventListener('input', (e)=>{ animSpeed = parseFloat(e.target.value||'1')||1; });
+  $('#animMode')?.addEventListener('change', ()=>{ animMode = $('#animMode').value; if(filtersAnimated) requestAnimationFrame(tickFilters); else renderPhotomaker(); });
+  $('#animAmp')?.addEventListener('input', (e)=>{ animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) requestAnimationFrame(tickFilters); });
+  $('#animFreq')?.addEventListener('input', (e)=>{ animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) requestAnimationFrame(tickFilters); });
+  
+  // Video export
+  let videoRecorder = null;
+  let videoChunks = [];
+  let isRecording = false; // Flag to track recording state
+  let syntheticTime = 0; // Synthetic time for smooth video animation
+  $('#exportVideo')?.addEventListener('click', async ()=>{
+    if(!filtersAnimated || photos.length===0){
+      alert('Включите анимацию и загрузите фото');
+      return;
+    }
+    
+    const btn = $('#exportVideo');
+    const origText = btn.textContent;
+    
+    try {
+      // Create a temporary canvas to capture the composite (WebGL + photo layer)
+      const captureCanvas = document.createElement('canvas');
+      const pw = photoLayer.width, ph = photoLayer.height;
+      // Use display resolution (higher quality)
+      captureCanvas.width = pw;
+      captureCanvas.height = ph;
+      const captureCtx = captureCanvas.getContext('2d', {
+        alpha: true,
+        desynchronized: false
+      });
+      
+      // Try MP4/H264 first, fallback to WebM
+      let mimeType = 'video/webm;codecs=vp9';
+      let fileExt = 'webm';
+      
+      if(MediaRecorder.isTypeSupported('video/mp4')){
+        mimeType = 'video/mp4';
+        fileExt = 'mp4';
+      } else if(MediaRecorder.isTypeSupported('video/webm;codecs=h264')){
+        mimeType = 'video/webm;codecs=h264';
+        fileExt = 'webm';
+      }
+      
+      // MediaRecorder setup with high quality
+      const stream = captureCanvas.captureStream(30); // 30 fps
+      videoRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: 30000000 // 30 Mbps для максимального качества
+      });
+      
+      videoChunks = [];
+      videoRecorder.ondataavailable = (e)=> { if(e.data && e.data.size>0) videoChunks.push(e.data); };
+      videoRecorder.onstop = ()=>{
+        const blob = new Blob(videoChunks, {type: mimeType});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `animation-${Date.now()}.${fileExt}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        btn.textContent = origText;
+      };
+      
+      // Start recording with data chunks every 100ms for stability
+      videoRecorder.start(100);
+      
+      // Enable recording mode with synthetic time for smooth animation
+      isRecording = true;
+      syntheticTime = 0;
+      
+      // Render loop for exactly 5 seconds with FIXED time step
+      const startTime = performance.now();
+      const targetDuration = 5000; // 5 seconds in ms
+      const fps = 30;
+      const frameTimeStep = 1 / fps; // Fixed time increment per frame (in seconds)
+      let frameCount = 0;
+      
+      const renderLoop = ()=>{
+        const now = performance.now();
+        const elapsed = now - startTime;
+        
+        if(elapsed >= targetDuration){
+          // Disable recording mode
+          isRecording = false;
+          
+          // Wait longer for final frames to be encoded
+          setTimeout(()=>{
+            videoRecorder.stop();
+            btn.textContent = origText;
+            console.log(`Recording complete: ${elapsed.toFixed(0)}ms, ${frameCount} frames, using ${mimeType}`);
+          }, 500);
+          return;
+        }
+        
+        // Update progress
+        const progress = Math.floor((elapsed / targetDuration) * 100);
+        btn.textContent = `RECORDING ${progress}%`;
+        
+        // Increment synthetic time by FIXED step (guarantees smooth animation)
+        // Apply animSpeed to respect user's speed setting
+        syntheticTime += frameTimeStep * Math.max(0.2, animSpeed);
+        
+        // Render current animation frame using synthetic time
+        renderPhotomaker();
+        
+        // Copy to capture canvas with high quality
+        captureCtx.imageSmoothingEnabled = true;
+        captureCtx.imageSmoothingQuality = 'high';
+        captureCtx.clearRect(0,0,pw,ph);
+        captureCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        captureCtx.drawImage(photoLayer, 0, 0);
+        
+        frameCount++;
+        
+        // Continue loop at maximum speed (time is synthetic, not tied to real time)
+        requestAnimationFrame(renderLoop);
+      };
+      
+      renderLoop();
+      
+    } catch(err){
+      console.error('Video export error:', err);
+      alert('Ошибка записи видео: ' + err.message);
+      btn.textContent = origText;
+    }
+  });
+  
   // removed photoScale slider listener (scaling now on-canvas)
 
   // (удалены глобальные обработчики stage/mousemove для предотвращения дребезга)
