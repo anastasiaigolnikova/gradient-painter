@@ -8,72 +8,113 @@
     @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&display=swap');
     :root{color-scheme:dark}
     html,body{height:100%;margin:0;background:#000}
-    #wrap{display:grid;grid-template-columns:311px 1fr;gap:0;height:100%;padding:0}
-    
-    /* === MENU (PIXEL-PERFECT) === */
+    #wrap{display:grid;grid-template-columns:280px 1fr;gap:0;height:100%;padding:0}
+
+    /* === MENU === */
+    :root{
+      --b: rgba(255,255,255,0.14);
+      --b-hover: rgba(255,255,255,0.38);
+      --b-strong: rgba(255,255,255,0.22);
+      --t: rgba(255,255,255,0.92);
+      --t-mute: rgba(255,255,255,0.5);
+      --bg-hover: rgba(255,255,255,0.05);
+      --bg-active: rgba(255,255,255,0.09);
+      --h: 32px;
+    }
     #ui{
       display:flex;flex-direction:column;gap:0;align-items:stretch;
-      color:#fff;padding:32px;background:#000;overflow-y:auto;position:relative;
-      font:14px/1.3 'Archivo',system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:var(--t);padding:20px 20px 24px;background:#000;overflow-y:auto;position:relative;
+      font:12px/1.35 'Archivo',system-ui,-apple-system,Segoe UI,Roboto,Arial;
       text-transform:uppercase;
     }
-    .section-title{font-size:24px;line-height:28px;text-align:center;letter-spacing:.02em;font-weight:600;color:#fff;margin:0 0 24px}
-    
-    .color-row{display:flex;gap:24px;margin-bottom:8px}
-    #ui input[type="color"]{appearance:none;border:0;background:none;width:64px;height:22px;padding:0;border-radius:4px;cursor:pointer}
-    .hex-row{display:flex;gap:24px;margin-bottom:12px}
-    .hex-input{width:64px;height:24px;border:1px solid #D9D9D9;background:transparent;color:#D9D9D9;padding:0 6px;font:12px/24px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box}
-    /* Совершенное выравнивание: сетка 3x2 */
-    .color-grid{display:grid;grid-template-columns:repeat(3,64px);column-gap:24px;row-gap:8px;margin-bottom:8px}
-    .hex-input::placeholder{color:#7a7a7a}
-    
-    .checkbox-row{display:flex;align-items:center;gap:10px;margin:12px 0 24px}
-    #ui input[type="checkbox"]{appearance:none;width:16px;height:16px;border:1px solid #D9D9D9;background:transparent;cursor:pointer}
-    #ui input[type="checkbox"]:checked{background:#D9D9D9}
-    
-    .range{display:block;margin:8px 0 16px}
-    #ui input[type="range"]{appearance:none;width:100%;height:6px;background:#D9D9D9;border:0;cursor:pointer}
-    #ui input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;background:#CFCFCF;border-radius:3px;border:1px solid #CFCFCF;margin-top:-5px}
-    #ui input[type="range"]::-moz-range-thumb{width:16px;height:16px;background:#CFCFCF;border:none;border-radius:3px}
-    
-    .btn-row{display:flex;gap:12px;margin:12px 0}
-    .btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border:1px solid #D9D9D9;background:transparent;color:#D9D9D9;cursor:pointer;font:14px/1 'Archivo',system-ui;text-transform:uppercase}
-    .btn svg{display:block}
-    .btn:hover{background:#111}
-    .file-upload-wrapper{display:inline-flex}
-    .file-upload-button{all:unset}
-    .file-upload-button{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border:1px solid #D9D9D9;color:#D9D9D9;cursor:pointer;text-transform:uppercase}
-    .file-upload-button:hover{background:#111}
-    
-    /* UNDO: единый вид + размер */
+    .section-title{font-size:13px;line-height:1;text-align:left;letter-spacing:.16em;font-weight:600;color:#fff;margin:0 0 16px;opacity:.9}
+
+    .color-row{display:flex;gap:14px;margin-bottom:6px}
+    #ui input[type="color"]{appearance:none;border:0;background:none;width:56px;height:20px;padding:0;border-radius:3px;cursor:pointer}
+    .hex-row{display:flex;gap:14px;margin-bottom:8px}
+    .hex-input{width:56px;height:22px;border:1px solid var(--b);background:transparent;color:var(--t);padding:0 6px;font:10px/22px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box;border-radius:2px}
+    .hex-input:focus{outline:none;border-color:var(--b-hover)}
+    .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:6px;margin-bottom:6px}
+    .hex-input::placeholder{color:var(--t-mute)}
+
+    .checkbox-row{display:flex;align-items:center;gap:8px;margin:8px 0 12px;font-size:10px;letter-spacing:.1em;color:var(--t-mute)}
+    #ui input[type="checkbox"]{appearance:none;width:13px;height:13px;border:1px solid var(--b);background:transparent;cursor:pointer;border-radius:2px;flex-shrink:0}
+    #ui input[type="checkbox"]:checked{background:rgba(255,255,255,0.85);border-color:rgba(255,255,255,0.85)}
+
+    .range{display:block;margin:4px 0 10px}
+    #ui input[type="range"]{appearance:none;width:100%;height:2px;background:var(--b);border:0;cursor:pointer;border-radius:2px}
+    #ui input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#fff;border-radius:50%;border:0;margin-top:-5px;cursor:grab}
+    #ui input[type="range"]::-webkit-slider-thumb:active{cursor:grabbing}
+    #ui input[type="range"]::-moz-range-thumb{width:12px;height:12px;background:#fff;border:none;border-radius:50%}
+
+    .btn-row{display:flex;gap:6px;margin:6px 0}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:var(--h);padding:0 6px;border:1px solid var(--b);background:transparent;color:var(--t);cursor:pointer;font:9px/1.15 'Archivo',system-ui;text-transform:uppercase;letter-spacing:.05em;border-radius:2px;transition:background .12s,border-color .12s;box-sizing:border-box;min-width:0;text-align:center;white-space:normal}
+    .btn svg{display:block;flex-shrink:0}
+    .btn:hover{background:var(--bg-hover);border-color:var(--b-hover)}
+    .btn:active{background:var(--bg-active)}
+    .file-upload-wrapper{display:inline-flex;min-width:0}
+    .file-upload-button{all:unset;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:var(--h);padding:0 6px;border:1px solid var(--b);color:var(--t);cursor:pointer;text-transform:uppercase;font:9px/1.15 'Archivo',system-ui;letter-spacing:.05em;border-radius:2px;transition:background .12s,border-color .12s;box-sizing:border-box;text-align:center;white-space:normal;min-width:0}
+    .file-upload-button:hover{background:var(--bg-hover);border-color:var(--b-hover)}
+
+    /* UNDO uses the same look as .btn now — no special sizing */
     .btn-undo{
       width:100%;
-      height:40px;
-      padding:0 18px;
-      border:1px solid #D9D9D9;
-      display:flex; align-items:center; gap:8px;
-      color:#D9D9D9; background:transparent; text-transform:uppercase;
+      height:var(--h);
+      padding:0 6px;
+      border:1px solid var(--b);
+      display:flex; align-items:center; justify-content:center; gap:4px;
+      color:var(--t); background:transparent; text-transform:uppercase;
       cursor:pointer;
-      font:14px/1 'Archivo',system-ui;
-      margin:8px 0 24px;
+      font:9px/1.15 'Archivo',system-ui;letter-spacing:.05em;
+      margin:0;border-radius:2px;
+      transition:background .12s,border-color .12s;
+      box-sizing:border-box;min-width:0;
     }
     .btn-undo svg{
-      width:16px; height:16px; stroke:#D9D9D9; stroke-width:1.5;
+      width:12px; height:12px; stroke:currentColor; stroke-width:1.5;
       vector-effect:non-scaling-stroke; stroke-linecap:square; stroke-linejoin:miter;
-      fill:none;
+      fill:none;flex-shrink:0;
     }
-    .btn-undo:hover{background:#111}
-    
-    .photomaker{margin-top:24px}
-    .lab{display:block;margin:16px 0 6px;letter-spacing:.08em}
-    
+    .btn-undo:hover{background:var(--bg-hover);border-color:var(--b-hover)}
+
+    .photomaker{margin-top:16px}
+    .lab{display:block;margin:10px 0 4px;letter-spacing:.12em;font-size:9px;color:var(--t-mute);font-weight:500}
+
     .btn-download{
-      width:100%;height:56px;margin-top:24px;border:1px solid #D9D9D9;border-radius:0;
+      width:100%;height:var(--h);margin-top:10px;border:1px solid var(--b);border-radius:2px;
       background:transparent;
-      color:#D9D9D9;font-weight:400;cursor:pointer;display:flex;align-items:center;justify-content:center;text-transform:uppercase;
-      font:14px/1 'Archivo',system-ui;
+      color:var(--t);font-weight:400;cursor:pointer;display:flex;align-items:center;justify-content:center;text-transform:uppercase;
+      font:10px/1 'Archivo',system-ui;letter-spacing:.06em;
+      transition:background .12s,border-color .12s;
+      box-sizing:border-box;
     }
-    .btn-download:hover{background:#111}
+    .btn-download:hover{background:var(--bg-hover);border-color:var(--b-hover)}
+
+    /* Native select styling */
+    #ui select{
+      appearance:none;-webkit-appearance:none;
+      background:transparent;color:var(--t);
+      border:1px solid var(--b);border-radius:2px;
+      padding:0 24px 0 10px;height:var(--h);
+      font:10px/1 'Archivo',system-ui;letter-spacing:.06em;text-transform:uppercase;
+      cursor:pointer;width:100%;
+      background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='white' stroke-opacity='0.5' fill='none' stroke-width='1.2'/></svg>");
+      background-repeat:no-repeat;background-position:right 10px center;
+    }
+    #ui select:hover{border-color:var(--b-hover)}
+    #ui select:focus{outline:none;border-color:var(--b-hover)}
+
+    /* Brand link pinned to the bottom of the sidebar.
+       margin-top:auto pushes it down within the column-flex #ui container. */
+    .brand-link{
+      display:block;margin:auto 0 0;padding-top:18px;
+      border-top:1px solid var(--b);
+      color:rgba(255,255,255,0.38);
+      text-decoration:none;
+      transition:color .15s;
+    }
+    .brand-link:hover{color:rgba(255,255,255,0.85)}
+    .brand-link svg{display:block;width:100%;height:auto;fill:currentColor}
     
     /* Design overlay (dev helper) */
     #designOverlay{position:absolute;inset:0;z-index:9999;pointer-events:none;background-repeat:no-repeat;background-position:top center;background-size:100% auto;opacity:0.5;display:none}
@@ -108,7 +149,7 @@
   <div id="ui">
     <div id="designOverlay"></div>
     
-    <div class="section-title">PAINTER</div>
+    <div class="section-title">HOLISTIC GENERATOR</div>
 
     <div class="color-grid">
       <input id="hexTop" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
@@ -128,11 +169,34 @@
       <label>GRAIN</label>
     </div>
 
-    <!-- Unified button row: 4 equal buttons -->
-    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 24px">
+    <!-- Row 1: primary uploads — Photo + Video, equal width -->
+    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 6px">
+      <label class="file-upload-wrapper" style="margin:0">
+        <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.gif,.webp" hidden>
+        <span class="file-upload-button" style="width:100%">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+            <rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="9" cy="10" r="2"/><path d="M3 18l5-5 4 4 3-3 6 6"/>
+          </svg>
+          UPLOAD PHOTO
+        </span>
+      </label>
+
+      <label class="file-upload-wrapper" style="margin:0">
+        <input type="file" id="videoInput" accept="video/*" hidden>
+        <span class="file-upload-button" style="width:100%">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+            <rect x="3" y="6" width="13" height="12" rx="1"/><path d="M16 10l5-3v10l-5-3z"/>
+          </svg>
+          UPLOAD VIDEO
+        </span>
+      </label>
+    </div>
+
+    <!-- Row 2: secondary — SVG (smaller) -->
+    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:0 0 16px">
       <label class="file-upload-wrapper" style="margin:0">
         <input type="file" id="svgInput" accept=".svg" hidden>
-        <span class="file-upload-button" style="width:100%;justify-content:center;font-size:13px;padding:0 8px">
+        <span class="file-upload-button" style="width:100%">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
             <path d="M12 3v12M6 9l6-6 6 6"/><path d="M4 21h16"/>
           </svg>
@@ -140,35 +204,25 @@
         </span>
       </label>
 
-      <label class="file-upload-wrapper" style="margin:0">
-      <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.gif,.webp" hidden>
-        <span class="file-upload-button" style="width:100%;justify-content:center;font-size:13px;padding:0 8px">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
-            <path d="M12 3v12M6 9l6-6 6 6"/><path d="M4 21h16"/>
-          </svg>
-          UPLOAD PHOTO
-        </span>
-      </label>
-
-      <button class="btn btn-undo" style="margin:0;width:100%;min-width:0;justify-content:center;gap:6px;font-size:13px;padding:0 8px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+      <button class="btn btn-undo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
           <path d="M9 7L4 12L9 17"/>
           <path d="M20 12H5"/>
         </svg>
         UNDO
       </button>
 
-      <button id="clear" class="btn" style="width:100%;justify-content:center;gap:6px;font-size:13px;padding:0 8px">
-        RESET
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+      <button id="clear" class="btn" style="width:100%">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
           <path d="M6 6l12 12M18 6L6 18"/>
         </svg>
+        RESET
       </button>
     </div>
 
     <div id="photomakerSection" class="photomaker hidden">
-      <label class="lab" style="margin-top:24px">PHOTO STYLE</label>
-      <select id="patternSelect" class="btn" style="width:100%;height:40px;padding:0 12px;text-transform:none;color:#000;background:#fff;border-color:#D9D9D9;margin:8px 0 16px">
+      <label class="lab">PHOTO STYLE</label>
+      <select id="patternSelect" style="margin:4px 0 6px">
         <option value="none">Original (no filter)</option>
         <option value="dots">Halftone (dots)</option>
         <option value="displace">Displace (3D)</option>
@@ -185,44 +239,65 @@
       <label class="lab">STRENGTH</label>
       <label class="range"><input id="detailLevel" type="range" min="10" max="90" value="50"/></label>
 
-      <div class="checkbox-row" style="margin:16px 0 8px">
+      <div class="checkbox-row">
         <input id="invertPattern" type="checkbox"/>
         <label>INVERT</label>
       </div>
 
       <div id="animationControls" style="display:none">
-        <div class="checkbox-row" style="margin:8px 0 8px">
-          <input id="animateFilter" type="checkbox"/>
-          <label>ANIMATE</label>
-        </div>
+        <label class="lab">ANIMATION MODE</label>
+        <select id="animMode" style="margin:4px 0 6px">
+          <option value="off">— Off (static) —</option>
+          <option value="flow">Flow</option>
+          <option value="liquid">Liquid (Perlin)</option>
+          <option value="smoke">Smoke / Fluid</option>
+          <option value="glitch">Glitch / Datamosh</option>
+          <option value="chromatic">RGB Chromatic Split</option>
+          <option value="pixelate">Pixelate</option>
+          <option value="particle">Particle Dissolve</option>
+          <option value="pixelhd">Pixel HD</option>
+          <option value="aiscan">AI Scan</option>
+        </select>
         <label class="lab">SPEED</label>
         <label class="range"><input id="animSpeed" type="range" min="0.2" max="3" step="0.1" value="1"/></label>
-
-        <label class="lab">ANIMATION MODE</label>
-        <select id="animMode" class="btn" style="width:100%;height:40px;padding:0 12px;text-transform:none;color:#000;background:#fff;border-color:#D9D9D9;margin:8px 0 8px">
-          <option value="flow">Flow</option>
-          <option value="wave">Wave</option>
-          <option value="shuffle">Shuffle</option>
-        </select>
         <label class="lab">AMPLITUDE</label>
         <label class="range"><input id="animAmp" type="range" min="0" max="1" step="0.01" value="0.30"/></label>
         <label class="lab">FREQUENCY</label>
         <label class="range"><input id="animFreq" type="range" min="0.5" max="3" step="0.05" value="1.20"/></label>
       </div>
 
-      <div style="margin-top:16px">
-        <button id="exportVideo" class="btn" style="width:100%;justify-content:center;display:none">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D9D9D9" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter">
-            <rect x="2" y="5" width="20" height="14" rx="2"/>
-            <path d="M8 12l5-3v6l-5-3z"/>
-          </svg>
-          RECORD VIDEO (5s)
-        </button>
-      </div>
-      
+      <button id="exportVideo" class="btn-download" style="display:none;margin-top:14px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="margin-right:6px">
+          <rect x="2" y="5" width="20" height="14" rx="2"/>
+          <path d="M8 12l5-3v6l-5-3z"/>
+        </svg>
+        <span id="exportVideoLabel">RECORD VIDEO (5S)</span>
+      </button>
+
     </div>
 
     <button id="download" class="btn-download">DOWNLOAD PNG</button>
+
+    <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
+      <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
+        <path d="M301.21 701.949L335.878 373.616C337.24 359.55 337.875 349.84 337.875 344.486C338.794 330.258 335.646 316.063 328.799 303.558C325.866 299.106 321.793 295.521 317.005 293.175C312.218 290.829 306.889 289.808 301.573 290.217C269.447 290.217 218.02 324.037 147.293 391.676L120.703 713.565L102.098 722.64L-0.817383 701.495L56.3577 9.16535L74.5083 -0.454102L177.875 20.6906L153.827 317.352C228.123 222.972 296.249 175.782 358.203 175.782C373.182 175.022 388.098 178.22 401.448 185.054C414.799 191.888 426.112 202.118 434.253 214.714C451.497 240.668 460.119 278.571 460.119 328.423C460.044 346.189 459.044 363.94 457.124 381.602L422.457 714.019L404.307 723.547L301.21 701.949Z"/>
+        <path d="M618.574 696.686C591.429 676.01 570.695 648.07 558.769 616.1C543.988 576.983 536.84 535.395 537.714 493.588C537.81 433.221 548.087 373.302 568.115 316.354C586.189 261.975 614.192 211.419 650.702 167.252L671.303 164.257L724.483 208.452C762.412 196.858 801.806 190.746 841.465 190.302C872.896 189.84 903.841 198.101 930.858 214.169C957.317 230.039 978.815 252.984 992.932 280.417C1008.12 309.983 1015.78 342.834 1015.26 376.067C1014.06 432.785 997.94 488.187 968.52 536.694C938.899 589.607 898.524 635.73 849.995 672.093C802.199 707.667 755.188 725.484 708.964 725.544C676.488 726.077 644.734 715.939 618.574 696.686ZM696.351 655.758C723.456 649.042 752.346 630.56 783.021 600.31C814.77 568.505 841.676 532.211 862.882 492.59C883.95 455.401 898.299 414.789 905.265 372.618C900.869 346.137 886.97 322.167 866.172 305.195C845.374 288.223 819.103 279.414 792.278 280.417C762.518 281.013 732.971 285.591 704.427 294.029C686.733 329.995 673.331 367.916 664.496 407.013C655.291 447.353 650.664 488.602 650.702 529.979C650.702 603.486 665.918 645.412 696.351 655.758Z"/>
+        <path d="M1070.98 701.496L1128.25 9.61945L1144.31 0L1250.22 21.5984L1192.5 713.566L1175.89 722.641L1070.98 701.496Z"/>
+        <path d="M1306.39 701.95L1350.59 187.853L1365.57 178.324L1472.02 199.831L1427.91 714.02L1413.3 723.548L1306.39 701.95ZM1360.85 19.1488L1379 8.16797L1494.98 36.3005L1484.45 141.752L1462.85 153.277L1349.32 126.052L1360.85 19.1488Z"/>
+        <path d="M1511.86 713.021L1518.85 622.271L1738.74 583.612L1629.29 490.684C1606.46 472.643 1586.85 450.856 1571.3 426.251C1559.14 405.289 1552.86 381.426 1553.15 357.191C1552.8 323.326 1564.08 290.365 1585.1 263.809C1608.79 234.557 1640.01 212.313 1675.4 199.468C1718.51 183.393 1764.26 175.573 1810.26 176.417C1854.85 176.486 1899.25 182.405 1942.3 194.023L1948.84 211.084L1889.12 298.385C1860.62 292.335 1837.84 288.16 1820.78 285.861C1804.31 283.541 1787.69 282.359 1771.05 282.322C1738.9 281.064 1706.79 285.834 1676.4 296.388C1653.53 305.826 1639.58 318.562 1634.56 334.594C1639.57 346.978 1647.25 358.103 1657.06 367.173C1673.69 383.627 1691.29 399.053 1709.79 413.365L1891.3 566.551L1896.38 584.7L1831.58 663.562L1527.29 722.277L1511.86 713.021Z"/>
+        <path d="M2023.35 701.95L2058.47 276.152L1968.62 271.705L1958.55 258.093L1972.16 187.308L2065.55 191.845L2077.07 51.2739L2091.59 41.7451L2199.05 62.7991L2188.06 197.835L2296.97 202.917L2307.04 216.983L2294.52 287.768L2180.99 282.232L2144.68 714.02L2130.07 723.548L2023.35 701.95Z"/>
+        <path d="M2328.73 701.95L2372.93 187.852L2387.99 178.323L2494.45 199.831L2449.89 714.019L2435.36 723.548L2328.73 701.95ZM2383.18 19.1481L2401.33 8.53027L2517.41 36.6628L2506.79 142.114L2485.28 153.639L2371.75 126.414L2383.18 19.1481Z"/>
+        <path d="M2597.18 676.358C2569.23 643.869 2555.25 596.014 2555.25 532.792C2555.37 473.611 2570.11 415.376 2598.18 363.271C2625.5 310.357 2665.38 264.955 2714.34 231.049C2760.83 197.991 2816.48 180.257 2873.52 180.319C2912.78 180.675 2951.68 187.797 2988.51 201.373L2993.59 218.979L2923.8 308.821C2899.6 295.148 2879.18 284.682 2862.54 277.422C2848.6 271.011 2833.9 266.376 2818.8 263.628C2797.38 267.984 2776.05 283.381 2754.82 309.819C2731.54 340.187 2713.84 374.447 2702.54 411.005C2688.89 452.746 2682.03 496.408 2682.22 540.324C2681.32 569.002 2685.4 597.619 2694.28 624.903C2702.36 646.501 2714.89 658.752 2731.95 661.838C2748.65 659.478 2768.22 647.59 2790.67 626.173C2821 595.585 2848.89 562.663 2874.07 527.71L2973.9 546.313L2980.97 563.919C2945.45 610.899 2902.25 651.55 2853.19 684.162C2812.68 710.584 2765.43 724.792 2717.06 725.09C2665.09 725.09 2625.13 708.846 2597.18 676.358Z"/>
+        <path d="M3407.79 718.556L3354.61 617.643C3451.41 564.342 3521.77 517.818 3565.7 478.07C3609.62 438.321 3633.64 401.144 3637.76 366.538C3636.69 357.05 3633.74 347.871 3629.06 339.547C3624.38 331.223 3618.08 323.922 3610.53 318.078C3592.88 305.364 3571.46 298.97 3549.73 299.928C3517.13 300.744 3485.24 309.597 3456.88 325.701C3421.12 345.648 3389.44 372.156 3363.5 403.836L3337.82 713.656L3319.67 722.731L3216.75 701.586L3273.93 9.25617L3292.08 -0.363281L3395.54 20.7814L3370.4 324.067C3440.76 226.36 3510.73 177.476 3580.31 177.415C3619.15 177.415 3648.95 190.968 3669.7 218.072C3690.45 245.175 3700.83 283.018 3700.83 331.599C3700.34 382.954 3688.76 433.597 3666.89 480.066C3643.6 530.662 3611.56 576.745 3572.23 616.191C3529.51 659.258 3480.56 695.662 3427.03 724.183L3407.79 718.556Z"/>
+        <path d="M3756.73 701.95L3798.39 187.852L3814 178.323L3920.45 199.831L3911.38 309.82C3975.99 220.401 4034.92 175.722 4088.17 175.782C4099.22 175.119 4110.25 177.481 4120.07 182.613C4129.89 187.745 4138.12 195.454 4143.89 204.913C4155.96 224.333 4162.04 253.555 4162.04 292.759C4162.04 323.009 4158.86 367.355 4152.51 425.798H4048.6C4052.6 395.487 4054.93 364.98 4055.58 334.413C4056.41 322.462 4054.62 310.475 4050.32 299.293C4048.74 296.097 4046.25 293.437 4043.17 291.646C4040.09 289.854 4036.55 289.01 4032.99 289.219C4020.64 289.219 4004.49 296.661 3984.53 311.362C3956.39 333.535 3929.96 357.805 3905.48 383.962L3878.25 713.384L3863.19 722.459L3756.73 701.95Z"/>
+        <path d="M4450.72 698.955L4468.24 529.253L4218.21 722.55L4199.15 714.019L4177.01 588.966L4483.85 374.07L4492.92 287.223L4219.85 290.218L4203.78 277.24L4217.76 188.306H4596.93L4615.08 207.363L4571.43 713.565L4553.82 722.64L4450.72 698.955Z"/>
+        <path d="M4686.14 700.952L4728.34 187.852L4743.4 178.324L4850.4 199.831L4840.87 316.899C4914.87 222.761 4982.81 175.722 5044.7 175.783C5059.68 175.022 5074.6 178.22 5087.95 185.055C5101.3 191.889 5112.61 202.118 5120.76 214.714C5138 240.669 5146.62 278.572 5146.62 328.424C5146.54 346.19 5145.55 363.941 5143.63 381.603L5108.96 714.02L5091.35 723.548L4987.44 701.95L5022.11 373.617C5023.47 359.551 5024.1 349.841 5024.1 344.486C5024.1 308.187 5012.4 290.037 4988.98 290.037C4957.1 290.037 4905.67 323.856 4834.7 391.495L4808.02 712.84L4792.95 722.369L4686.14 700.952Z"/>
+        <path d="M5240 683.437C5219.25 656.273 5208.88 618.279 5208.88 569.455C5209.15 518.397 5220.55 468.012 5242.27 421.805C5265.79 371.435 5297.91 325.554 5337.2 286.225C5379.67 243.285 5428.3 206.917 5481.5 178.324L5501.65 183.769L5554.83 284.229C5458.02 337.408 5387.57 384.023 5343.46 424.074C5299.36 464.125 5275.16 501.363 5270.86 535.787C5271.89 545.354 5274.9 554.603 5279.7 562.945C5284.49 571.287 5290.97 578.542 5298.72 584.247C5316.68 596.902 5338.3 603.281 5360.25 602.397C5392.8 601.557 5424.63 592.671 5452.91 576.534C5488.75 556.395 5520.51 529.742 5546.57 497.944L5586.68 9.98274L5604.83 0.363281L5708.29 21.508L5650.57 713.929L5633.51 723.004L5529.51 701.859L5540.13 575.898C5469.82 674.634 5399.52 724.002 5329.22 724.002C5290.49 724.063 5260.76 710.541 5240 683.437Z"/>
+        <path d="M5944.98 701.496L6002.15 9.61945L6018.21 0L6124.22 21.5984L6066.5 713.566L6049.89 722.641L5944.98 701.496Z"/>
+        <path d="M6430.51 698.955L6448.03 529.253L6198 722.55L6178.94 714.019L6156.8 588.966L6463.63 374.07L6472.71 287.223L6199.54 290.218L6183.48 277.24L6197.55 188.306H6576.62L6595.23 207.363L6551.94 713.565L6534.42 722.64L6430.51 698.955Z"/>
+        <path d="M6857.77 718.556L6804.59 617.643C6901.4 564.342 6971.76 517.818 7015.69 478.069C7059.61 438.321 7083.63 401.144 7087.74 366.538C7086.7 357.044 7083.75 347.858 7079.07 339.531C7074.39 331.204 7068.08 323.907 7060.52 318.078C7042.87 305.364 7021.45 298.97 6999.71 299.928C6967.12 300.744 6935.23 309.597 6906.87 325.701C6871.11 345.648 6839.43 372.156 6813.49 403.836L6787.89 713.565L6769.74 722.64L6666.83 701.495L6724 9.16535L6742.15 -0.454102L6845.61 20.6906L6820.57 323.976C6890.81 226.269 6960.75 177.385 7030.39 177.325C7069.23 177.325 7099.03 190.877 7119.78 217.981C7140.53 245.084 7150.91 282.927 7150.91 331.509C7150.66 382.773 7139.36 433.38 7117.78 479.884C7094.5 530.48 7062.45 576.563 7023.13 616.009C6980.41 659.077 6931.46 695.481 6877.92 724.001L6857.77 718.556Z"/>
+      </svg>
+    </a>
   </div>
   <div id="stage"><canvas id="gl"></canvas><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
 </div>
@@ -443,7 +518,7 @@
   let filtersAnimated = false;
   let animSpeed = 1;
   let animStart = performance.now();
-  let animMode = 'flow';
+  let animMode = 'off';
   let animAmp = 0.30; // 0..1
   let animFreq = 1.20; // Hz base
   
@@ -612,17 +687,19 @@
     }
   });
   canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); brushPx = Math.max(1, Math.min(64, brushPx + (e.deltaY<0?1:-1))); }, {passive:false});
-  $('#clear').onclick = ()=>{ 
+  $('#clear').onclick = ()=>{
     svgLoaded = false;
-    initState(); 
-    draw(); 
-    // Clear all photos
+    initState();
+    draw();
+    // Clear all photos (and release any video resources)
+    photos.forEach(disposePhoto);
     photos = [];
     selectedIndex = -1;
       originalPhoto = null;
       photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
       // Hide photo settings section when photo is cleared
       $('#photomakerSection').classList.add('hidden');
+      updateExportButton();
   };
   $('#download').onclick = ()=>{
     // Create temp canvas with the actual display size
@@ -1237,17 +1314,25 @@
   fit();
 
   // ========== PHOTOMAKER ==========
-  const photoLayer = document.createElement('canvas');
+  let photoLayer = document.createElement('canvas');
   photoLayer.id = 'photoLayer';
   stage.appendChild(photoLayer);
-  const photoCtx = photoLayer.getContext('2d', {alpha: true, willReadFrequently: true});
-  
-  const offscreen = document.createElement('canvas');
-  const offctx = offscreen.getContext('2d', {alpha: false, willReadFrequently: true});
-  
+  let photoCtx = photoLayer.getContext('2d', {alpha: true, willReadFrequently: true});
+
+  let offscreen = document.createElement('canvas');
+  let offctx = offscreen.getContext('2d', {alpha: false, willReadFrequently: true});
+
   // Intermediate canvas for post-processing animation effects
-  const animCanvas = document.createElement('canvas');
-  const animCtx = animCanvas.getContext('2d', {alpha: true, willReadFrequently: true});
+  let animCanvas = document.createElement('canvas');
+  let animCtx = animCanvas.getContext('2d', {alpha: true, willReadFrequently: true});
+
+  // When true, syncPhotoLayerSize() is a no-op (used while exporting at the
+  // source video's native resolution, where photoLayer is temporarily swapped
+  // to a different sized canvas).
+  let _skipPhotoLayerSync = false;
+  // While exporting full-size video, the regular videoLoop must yield to the
+  // dedicated record loop so they don't both render into the same canvas.
+  let _recordingActive = false;
   
   // Multi-photo support
   let photos = []; // [{image:ImageBitmap, scale:number, offsetX:number, offsetY:number}]
@@ -1280,6 +1365,7 @@
   let resizeStartDist = 1;
   
   function syncPhotoLayerSize(){
+    if(_skipPhotoLayerSync) return;
     const pw = canvas.clientWidth, ph = canvas.clientHeight;
     if(photoLayer.width !== pw || photoLayer.height !== ph){
       photoLayer.width = pw;
@@ -1292,26 +1378,35 @@
     return x - Math.floor(x);
   }
   
+  // Unified accessors so the same render path works for both photos and videos
+  function getPhotoSource(p){ return p.isVideo ? p.video : p.image; }
+  function getPhotoSize(p){
+    if(p.isVideo) return { w: p.video.videoWidth || 1, h: p.video.videoHeight || 1 };
+    return { w: p.image.width, h: p.image.height };
+  }
+
   function renderPhotomaker(){
     syncPhotoLayerSize();
     const pw = photoLayer.width, ph = photoLayer.height;
     photoCtx.clearRect(0,0,pw,ph);
-    
+
     if(photos.length===0) return;
-    
+
     // Вписать фото в offscreen (letterbox fit)
     // Per-photo filters
 
     offscreen.width = pw; offscreen.height = ph;
     animCanvas.width = pw; animCanvas.height = ph;
-    
+
     // Draw all photos in order
     // Use synthetic time during recording for smooth video, real time otherwise
     const tSec = isRecording ? syntheticTime : (performance.now()-animStart)/1000;
     const t = tSec * Math.max(0.2,animSpeed);
-    
+
     photos.forEach(p=>{
-      const imgW = p.image.width, imgH = p.image.height;
+      const src = getPhotoSource(p);
+      const { w: imgW, h: imgH } = getPhotoSize(p);
+      if(!imgW || !imgH) return;
       const sFit = Math.min(pw/imgW, ph/imgH);
       const w = imgW * sFit * (p.scale||1);
       const h = imgH * sFit * (p.scale||1);
@@ -1323,12 +1418,19 @@
       const invert = !!p.invert;
       
       if(pattern === 'none'){
-        photoCtx.drawImage(p.image, x, y, w, h);
+        // Render plain photo to intermediate canvas so animation can be applied on top
+        animCtx.clearRect(0,0,pw,ph);
+        animCtx.drawImage(src, x, y, w, h);
+        if(filtersAnimated){
+          applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+        } else {
+          photoCtx.drawImage(animCanvas, 0, 0);
+        }
       } else {
         // Render filter to intermediate canvas WITHOUT animation
         animCtx.clearRect(0,0,pw,ph);
         offctx.fillStyle = '#fff'; offctx.fillRect(0,0,pw,ph);
-        offctx.drawImage(p.image, x, y, w, h);
+        offctx.drawImage(src, x, y, w, h);
     const srcImageData = offctx.getImageData(0,0,pw,ph);
         
         // All filters now render staticaly to animCanvas
@@ -1351,7 +1453,7 @@
 
     const sel = getSelectedPhoto();
     if(showPhotoSelection && sel){
-      const imgW = sel.image.width, imgH = sel.image.height;
+      const { w: imgW, h: imgH } = getPhotoSize(sel);
       const sFit = Math.min(pw/imgW, ph/imgH);
       const w = imgW * sFit * (sel.scale||1);
       const h = imgH * sFit * (sel.scale||1);
@@ -1372,51 +1474,66 @@
     
     if(!animContainer || !modeSel) return;
     
-    // Show animation controls ONLY for Halftone (dots)
-    if(p && p.pattern === 'dots'){
+    // Show animation controls whenever a photo is selected, regardless of filter
+    if(p){
       animContainer.style.display = 'block';
       modeSel.disabled = false;
       modeSel.style.opacity = '';
       modeSel.style.pointerEvents = '';
     } else {
-      // Hide for all other patterns (including 'none' and when no photo selected)
+      // No photo: hide controls and disable any running animation
       animContainer.style.display = 'none';
-      // Also disable animation if it was on
       if(filtersAnimated){
         filtersAnimated = false;
-        const animCheckbox = document.getElementById('animateFilter');
-        if(animCheckbox) animCheckbox.checked = false;
+        animMode = 'off';
+        if(modeSel) modeSel.value = 'off';
       }
     }
   }
 
-  // Animation loop for filters
+  // Animation loop for filters — guarded against concurrent RAF cycles.
+  // For videos, the videoLoop is the sole driver (it renders every frame and
+  // renderPhotomaker internally decides whether to apply animation).
+  let _tickScheduled = false;
+  function ensureTickFilters(){
+    if(typeof hasAnyVideo === 'function' && hasAnyVideo()){
+      if(typeof ensureVideoLoop === 'function') ensureVideoLoop();
+      return;
+    }
+    if(filtersAnimated && !_tickScheduled){
+      _tickScheduled = true;
+      requestAnimationFrame(tickFilters);
+    }
+  }
   function tickFilters(){
-    if(filtersAnimated){ 
-      // DEBUG: Log once per second with timestamp to prevent grouping
-      const now = Date.now();
-      if(!window._lastDebugTime || now - window._lastDebugTime > 1000){
-        window._lastDebugTime = now;
-        const selectedPhoto = getSelectedPhoto();
-        console.log('═══════════════════════════════════════');
-        console.log('⏰ Time:', new Date().toLocaleTimeString());
-        console.log('📊 filtersAnimated:', filtersAnimated);
-        console.log('🎬 animMode:', animMode);
-        console.log('🎨 pattern:', selectedPhoto?.pattern || 'none');
-        console.log('⚡ animSpeed:', animSpeed);
-        console.log('📐 animAmp:', animAmp);
-        console.log('📡 animFreq:', animFreq);
-        console.log('═══════════════════════════════════════');
-      }
-      renderPhotomaker(); 
-      requestAnimationFrame(tickFilters); 
+    _tickScheduled = false;
+    if(!filtersAnimated) return;
+    if(typeof hasAnyVideo === 'function' && hasAnyVideo()) return; // video loop owns rendering
+    renderPhotomaker();
+    if(!_tickScheduled){
+      _tickScheduled = true;
+      requestAnimationFrame(tickFilters);
     }
   }
   
   // Universal animation post-processing: applies Flow/Wave/Reveal to ANY filter result
   function applyAnimationEffect(destCtx, sourceCanvas, w, h, t, tSec){
     const pattern = getSelectedPhoto()?.pattern || 'none';
-    
+
+    // ASCII (Signs): per-glyph animation — each character moves/replaces individually
+    if(pattern === 'ascii'){
+      applyASCIIAnimation(destCtx, sourceCanvas, w, h, t, tSec);
+      return;
+    }
+
+    // Modern universal effects — work on top of ANY filter (or plain photo)
+    if(animMode === 'liquid' || animMode === 'smoke' || animMode === 'glitch' ||
+       animMode === 'chromatic' || animMode === 'pixelate' || animMode === 'particle' ||
+       animMode === 'pixelhd' || animMode === 'aiscan'){
+      applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, animMode);
+      return;
+    }
+
     // Special handling for Halftone (dots) - custom organic animation
     if(pattern === 'dots'){
       applyDotsAnimation(destCtx, sourceCanvas, w, h, t, tSec);
@@ -1452,30 +1569,600 @@
         }
       }
       destCtx.putImageData(imgData, 0, 0);
-    } else if(animMode === 'wave'){
-      // Wave: вертикальная волна (сдвиг строк)
-      for(let y=0; y<h; y++){
-        const shift = Math.sin((y/h)*Math.PI*2 + t*animFreq*1.5) * animAmp * 30;
-        for(let x=0; x<w; x++){
-          const srcX = Math.floor(x + shift);
-          if(srcX>=0 && srcX<w){
-            const si = (y*w + srcX)*4;
-            const di = (y*w + x)*4;
-            data[di] = imgData.data[si];
-            data[di+1] = imgData.data[si+1];
-            data[di+2] = imgData.data[si+2];
-            data[di+3] = imgData.data[si+3];
+    } else {
+      // Fallback (e.g. shuffle on a non-dots/non-displace pattern): just draw the source frame
+      destCtx.drawImage(sourceCanvas, 0, 0);
+    }
+  }
+
+  // ===== Modern animation effects (work on top of any filter) =====
+  function applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, mode){
+    if(mode === 'liquid')    return effectLiquid(destCtx, w, h, t, tSec);
+    if(mode === 'smoke')     return effectSmoke(destCtx, w, h, t, tSec);
+    if(mode === 'glitch')    return effectGlitch(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'chromatic') return effectChromatic(destCtx, w, h, t, tSec);
+    if(mode === 'pixelate')  return effectPixelate(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'particle')  return effectParticle(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'pixelhd')   return effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'aiscan')    return effectAIScan(destCtx, sourceCanvas, w, h, t, tSec);
+    destCtx.drawImage(sourceCanvas, 0, 0);
+  }
+
+  // Liquid: smooth perlin-like displacement (2 octaves)
+  function effectLiquid(destCtx, w, h, t, tSec){
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const out = new Uint8ClampedArray(src.length);
+    const scale = 0.006 * animFreq;
+    const amp = animAmp * 50;
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        const nx = Math.sin(x*scale + y*scale*0.7 + t) * Math.cos(y*scale*1.3 - t*0.5);
+        const ny = Math.sin(y*scale - x*scale*0.5 + t*0.7) * Math.cos(x*scale*0.9 + t*0.3);
+        const sx = Math.max(0, Math.min(w-1, (x + nx*amp)|0));
+        const sy = Math.max(0, Math.min(h-1, (y + ny*amp)|0));
+        const si = (sy*w + sx)*4;
+        const di = (y*w + x)*4;
+        out[di]   = src[si];
+        out[di+1] = src[si+1];
+        out[di+2] = src[si+2];
+        out[di+3] = src[si+3];
+      }
+    }
+    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+  }
+
+  // Smoke: multi-octave noise displacement with larger amplitude / slower drift
+  function effectSmoke(destCtx, w, h, t, tSec){
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const out = new Uint8ClampedArray(src.length);
+    const t1 = tSec * 0.4 * Math.max(0.2, animSpeed);
+    const t2 = tSec * 0.9 * Math.max(0.2, animSpeed);
+    const amp = animAmp * 90;
+    const f = animFreq;
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        const nx = Math.sin(x*0.007*f + t1) + 0.5*Math.sin(x*0.022*f + t2 + y*0.01);
+        const ny = Math.cos(y*0.007*f - t1*0.7) + 0.5*Math.cos(y*0.022*f + t2 - x*0.01);
+        const sx = Math.max(0, Math.min(w-1, (x + nx*amp*0.6)|0));
+        const sy = Math.max(0, Math.min(h-1, (y + ny*amp*0.6)|0));
+        const si = (sy*w + sx)*4;
+        const di = (y*w + x)*4;
+        out[di]   = src[si];
+        out[di+1] = src[si+1];
+        out[di+2] = src[si+2];
+        out[di+3] = src[si+3];
+      }
+    }
+    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+  }
+
+  // Glitch: horizontal strip displacement + RGB shear, triggered in bursts
+  function effectGlitch(destCtx, sourceCanvas, w, h, t, tSec){
+    destCtx.clearRect(0,0,w,h);
+    destCtx.drawImage(sourceCanvas, 0, 0);
+
+    // Slice glitches (random horizontal strips shift each frame)
+    const burst = Math.sin(tSec * 4) * 0.5 + 0.5; // 0..1 pulsing intensity
+    const stripCount = 12 + Math.floor(animFreq * 16);
+    const maxShift = animAmp * 80;
+    const timeSeed = Math.floor(tSec * 8);
+    for(let i=0; i<stripCount; i++){
+      const trigger = seededRandom(timeSeed * 0.13 + i * 1.7);
+      if(trigger > 0.6 - burst*0.3){
+        const sy = Math.floor(seededRandom(timeSeed + i*3.1) * h);
+        const sh = 2 + Math.floor(seededRandom(timeSeed + i*5.7) * (h*0.06));
+        const shift = (seededRandom(timeSeed + i*9.2) - 0.5) * maxShift * 2;
+        destCtx.clearRect(0, sy, w, sh);
+        destCtx.drawImage(sourceCanvas, 0, sy, w, sh, shift, sy, w, sh);
+      }
+    }
+
+    // RGB chromatic aberration overlay
+    const cShift = (Math.sin(tSec * 2.3) * animAmp * 10) | 0;
+    if(cShift !== 0){
+      destCtx.globalCompositeOperation = 'screen';
+      destCtx.globalAlpha = 0.5;
+      destCtx.drawImage(sourceCanvas, cShift, 0);
+      destCtx.drawImage(sourceCanvas, -cShift, 0);
+      destCtx.globalAlpha = 1;
+      destCtx.globalCompositeOperation = 'source-over';
+    }
+  }
+
+  // RGB chromatic split: R/B channels drift horizontally, G stays put, pulses
+  function effectChromatic(destCtx, w, h, t, tSec){
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const out = new Uint8ClampedArray(src.length);
+    const shift = (Math.sin(t * 0.8) * animAmp * 25) | 0;
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        const di = (y*w + x)*4;
+        const xR = Math.max(0, Math.min(w-1, x - shift));
+        const xB = Math.max(0, Math.min(w-1, x + shift));
+        out[di]   = src[(y*w + xR)*4];
+        out[di+1] = src[di + 1];
+        out[di+2] = src[(y*w + xB)*4 + 2];
+        out[di+3] = src[di + 3];
+      }
+    }
+    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+  }
+
+  // Pixelate: turn image into mosaic of large square pixels; size pulses with time
+  function effectPixelate(destCtx, sourceCanvas, w, h, t, tSec){
+    // Pixel size from AMPLITUDE; gentle pulse with time
+    const base = 3 + animAmp * 50; // ~3..53 px
+    const pulse = 0.75 + Math.sin(t * 0.6) * 0.25; // 0.5..1
+    const pix = Math.max(2, Math.floor(base * pulse));
+    const ow = Math.max(1, Math.floor(w / pix));
+    const oh = Math.max(1, Math.floor(h / pix));
+    if(!window._pixTmp) window._pixTmp = document.createElement('canvas');
+    const tmp = window._pixTmp;
+    tmp.width = ow; tmp.height = oh;
+    const tctx = tmp.getContext('2d');
+    tctx.imageSmoothingEnabled = false;
+    tctx.clearRect(0,0,ow,oh);
+    tctx.drawImage(sourceCanvas, 0, 0, ow, oh);
+    destCtx.clearRect(0,0,w,h);
+    destCtx.imageSmoothingEnabled = false;
+    destCtx.drawImage(tmp, 0, 0, ow, oh, 0, 0, w, h);
+    destCtx.imageSmoothingEnabled = true;
+  }
+
+  // Particle dissolve: image broken into tiles that explode outward and reassemble in a loop
+  function effectParticle(destCtx, sourceCanvas, w, h, t, tSec){
+    destCtx.clearRect(0,0,w,h);
+    const tile = Math.max(6, Math.floor(28 - animFreq * 6));
+    const cycleTime = 3.5 / Math.max(0.2, animSpeed);
+    const phase = (tSec % cycleTime) / cycleTime; // 0..1
+    // Symmetric: dissolve out then back in (triangle wave)
+    const tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2; // 0..1..0
+    const cols = Math.ceil(w / tile);
+    const rows = Math.ceil(h / tile);
+    const cx = w * 0.5, cy = h * 0.5;
+    for(let r=0; r<rows; r++){
+      for(let c=0; c<cols; c++){
+        const id = r * cols + c;
+        const sx = c * tile, sy = r * tile;
+        const tw = Math.min(tile, w - sx);
+        const th = Math.min(tile, h - sy);
+        const rand1 = seededRandom(id * 0.13);
+        const rand2 = seededRandom(id * 0.37 + 100);
+        // Direction: radial from center + jitter
+        const tileCx = sx + tw*0.5, tileCy = sy + th*0.5;
+        const dxBase = (tileCx - cx) / Math.max(1, w*0.5);
+        const dyBase = (tileCy - cy) / Math.max(1, h*0.5);
+        const ang = Math.atan2(dyBase, dxBase) + (rand1 - 0.5) * 1.2;
+        const dist = (0.4 + rand2) * tri * animAmp * 250;
+        const ox = Math.cos(ang) * dist;
+        const oy = Math.sin(ang) * dist;
+        const rot = (rand1 - 0.5) * tri * Math.PI * 0.6;
+        const alpha = 1 - tri * 0.7;
+        destCtx.save();
+        destCtx.globalAlpha = Math.max(0, alpha);
+        destCtx.translate(sx + tw*0.5 + ox, sy + th*0.5 + oy);
+        destCtx.rotate(rot);
+        destCtx.drawImage(sourceCanvas, sx, sy, tw, th, -tw*0.5, -th*0.5, tw, th);
+        destCtx.restore();
+      }
+    }
+    destCtx.globalAlpha = 1;
+  }
+
+  // Pixel HD: image revealed through a grid of square cells that flicker in/out, with thin frames
+  function effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec){
+    destCtx.fillStyle = '#000';
+    destCtx.fillRect(0, 0, w, h);
+    const blockSize = Math.max(16, Math.floor(70 - animFreq * 14));
+    const cols = Math.ceil(w / blockSize);
+    const rows = Math.ceil(h / blockSize);
+    const cycle = 5.0 / Math.max(0.2, animSpeed);
+    const phase = (tSec % cycle) / cycle;
+    destCtx.lineWidth = 1;
+    for(let r=0; r<rows; r++){
+      for(let c=0; c<cols; c++){
+        const id = r * cols + c;
+        const bp = seededRandom(id * 0.137);
+        const local = (phase + bp) % 1;
+        const active = local > 0.25 && local < 0.85;
+        const x = c * blockSize, y = r * blockSize;
+        const bw = Math.min(blockSize, w - x), bh = Math.min(blockSize, h - y);
+        if(active){
+          destCtx.drawImage(sourceCanvas, x, y, bw, bh, x, y, bw, bh);
+        }
+        if(seededRandom(id * 0.31) > 0.45){
+          destCtx.strokeStyle = active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.16)';
+          destCtx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+        }
+      }
+    }
+  }
+
+  // AI Scan: object rendered as scanned dot-pattern, with data nodes (glowing dots + IDs) connected by thin lines
+  // AI Scan persistent state for cross-frame tracking + motion differencing.
+  // Reset to null on canvas resize so we don't compare stale frames.
+  const _aiScan = {
+    tracks: [],         // [{id, label, x, y, vx, vy, age, lost, conf, trail:[{x,y}]}]
+    prev: null,         // Uint8ClampedArray copy of previous animCanvas pixel buffer
+    prevW: 0, prevH: 0,
+    nextId: 431,
+    frame: 0
+  };
+
+  // AI Scan: raw machine-vision debug overlay drawn ON TOP of the live video/filter.
+  // Tracking is purely motion-driven — candidates come from frame-differencing blocks,
+  // not brightness. Static frames produce no tracks (correct CV behaviour).
+  function effectAIScan(destCtx, sourceCanvas, w, h, t, tSec){
+    const imgData = animCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+
+    // --- Base layer: the live source (video or filtered image), shown as-is.
+    destCtx.drawImage(sourceCanvas, 0, 0);
+
+    // --- Subtle monochrome reference grid (CV viewport vibe)
+    destCtx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    destCtx.lineWidth = 1;
+    const gs = 40;
+    for(let gx = gs; gx < w; gx += gs){
+      destCtx.beginPath(); destCtx.moveTo(gx + 0.5, 0); destCtx.lineTo(gx + 0.5, h); destCtx.stroke();
+    }
+    for(let gy = gs; gy < h; gy += gs){
+      destCtx.beginPath(); destCtx.moveTo(0, gy + 0.5); destCtx.lineTo(w, gy + 0.5); destCtx.stroke();
+    }
+
+    // --- Motion detection: block-wise luminance diff vs previous frame.
+    // Threshold balanced so subtle real motion (slow head/hand) still registers
+    // while bokeh shimmer / grain is filtered out by the cluster-size step below.
+    const blockSize = 32;
+    const motionThreshold = 10 + (1 - animAmp) * 10; // ~10..20; lower AMP = stricter
+    const cols = Math.ceil(w / blockSize);
+    const rows = Math.ceil(h / blockSize);
+    const motionGrid = new Float32Array(cols * rows); // 0 = no motion, else intensity
+    if(_aiScan.prev && _aiScan.prevW === w && _aiScan.prevH === h){
+      const prev = _aiScan.prev;
+      for(let by = 0; by + blockSize <= h; by += blockSize){
+        for(let bx = 0; bx + blockSize <= w; bx += blockSize){
+          let sumDiff = 0, samples = 0;
+          for(let yy = by; yy < by + blockSize; yy += 4){
+            for(let xx = bx; xx < bx + blockSize; xx += 4){
+              const i = (yy * w + xx) * 4;
+              const a = src[i] * 0.299 + src[i+1] * 0.587 + src[i+2] * 0.114;
+              const b = prev[i] * 0.299 + prev[i+1] * 0.587 + prev[i+2] * 0.114;
+              sumDiff += Math.abs(a - b);
+              samples++;
+            }
+          }
+          const avg = sumDiff / Math.max(1, samples);
+          if(avg > motionThreshold){
+            const cx = Math.floor(bx / blockSize);
+            const cy = Math.floor(by / blockSize);
+            motionGrid[cy * cols + cx] = avg;
           }
         }
       }
-      destCtx.putImageData(imgData, 0, 0);
     }
+    if(!_aiScan.prev || _aiScan.prevW !== w || _aiScan.prevH !== h){
+      _aiScan.prev = new Uint8ClampedArray(src);
+      _aiScan.prevW = w; _aiScan.prevH = h;
+    } else {
+      _aiScan.prev.set(src);
+    }
+
+    // --- Cluster motion blocks into connected components (4-neighbour BFS).
+    // This separates real moving objects (dense blobs of motion blocks) from
+    // scattered noise (single isolated blocks from bokeh/grain). Only clusters
+    // with at least minCells cells are kept and drawn as ONE bounding box.
+    const visited = new Uint8Array(cols * rows);
+    const minCells = 2; // discard only isolated single-block noise; keep small real motion (slow hands/faces)
+    const clusters = [];
+    for(let idx = 0; idx < motionGrid.length; idx++){
+      if(!motionGrid[idx] || visited[idx]) continue;
+      visited[idx] = 1;
+      const stack = [idx];
+      let minCx = Infinity, minCy = Infinity, maxCx = -Infinity, maxCy = -Infinity;
+      let sumI = 0, cellCount = 0;
+      while(stack.length){
+        const i = stack.pop();
+        const cy = (i / cols) | 0;
+        const cx = i - cy * cols;
+        if(cx < minCx) minCx = cx;
+        if(cy < minCy) minCy = cy;
+        if(cx > maxCx) maxCx = cx;
+        if(cy > maxCy) maxCy = cy;
+        sumI += motionGrid[i];
+        cellCount++;
+        // 4-neighbours
+        if(cx + 1 < cols){ const n = i + 1; if(motionGrid[n] && !visited[n]){ visited[n] = 1; stack.push(n); } }
+        if(cx > 0){ const n = i - 1; if(motionGrid[n] && !visited[n]){ visited[n] = 1; stack.push(n); } }
+        if(cy + 1 < rows){ const n = i + cols; if(motionGrid[n] && !visited[n]){ visited[n] = 1; stack.push(n); } }
+        if(cy > 0){ const n = i - cols; if(motionGrid[n] && !visited[n]){ visited[n] = 1; stack.push(n); } }
+      }
+      if(cellCount < minCells) continue;
+      clusters.push({
+        x: minCx * blockSize,
+        y: minCy * blockSize,
+        w: (maxCx - minCx + 1) * blockSize,
+        h: (maxCy - minCy + 1) * blockSize,
+        cx: ((minCx + maxCx + 1) * 0.5) * blockSize,
+        cy: ((minCy + maxCy + 1) * 0.5) * blockSize,
+        intensity: sumI / cellCount,
+        cellCount
+      });
+    }
+    // Sort biggest/strongest clusters first
+    clusters.sort((a, b) => (b.cellCount * b.intensity) - (a.cellCount * a.intensity));
+    // "motion" for downstream code is now the cluster list, not individual blocks
+    const motion = clusters;
+
+    // --- Candidate detections: cluster centers (one per real moving region).
+    // For large clusters we also seed extra sample points inside the cluster
+    // bounding box so big objects (a whole body) get multiple markers, not one.
+    const targetTracks = Math.max(4, Math.min(12, Math.floor(5 + animAmp * 8)));
+    const candidates = [];
+    for(const c of clusters){
+      candidates.push({ x: c.cx, y: c.cy, score: c.intensity * c.cellCount });
+      // Sub-seed inside large clusters: corners of the bbox if it's big enough
+      if(c.cellCount >= 6){
+        candidates.push({ x: c.x + c.w * 0.25, y: c.y + c.h * 0.4, score: c.intensity * c.cellCount * 0.7 });
+        candidates.push({ x: c.x + c.w * 0.75, y: c.y + c.h * 0.4, score: c.intensity * c.cellCount * 0.7 });
+        candidates.push({ x: c.x + c.w * 0.5,  y: c.y + c.h * 0.8, score: c.intensity * c.cellCount * 0.7 });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    const minDist = Math.min(w, h) * 0.14;
+    const detected = [];
+    for(const c of candidates){
+      if(detected.length >= targetTracks) break;
+      let close = false;
+      for(const d of detected){
+        const dx = d.x - c.x, dy = d.y - c.y;
+        if(dx*dx + dy*dy < minDist * minDist){ close = true; break; }
+      }
+      if(!close) detected.push(c);
+    }
+
+    // --- Track matching: nearest-neighbor association, smooth follow, coast when lost
+    const matchRadius = Math.min(w, h) * 0.2;
+    const usedDet = new Set();
+    for(const tr of _aiScan.tracks){
+      let bestIdx = -1, bestD2 = matchRadius * matchRadius;
+      for(let i = 0; i < detected.length; i++){
+        if(usedDet.has(i)) continue;
+        const dx = detected[i].x - tr.x;
+        const dy = detected[i].y - tr.y;
+        const d2 = dx * dx + dy * dy;
+        if(d2 < bestD2){ bestD2 = d2; bestIdx = i; }
+      }
+      if(bestIdx >= 0){
+        usedDet.add(bestIdx);
+        const target = detected[bestIdx];
+        const k = 0.35;
+        const newX = tr.x + (target.x - tr.x) * k;
+        const newY = tr.y + (target.y - tr.y) * k;
+        tr.vx = newX - tr.x;
+        tr.vy = newY - tr.y;
+        tr.trail.push({ x: tr.x, y: tr.y });
+        if(tr.trail.length > 22) tr.trail.shift();
+        tr.x = newX; tr.y = newY;
+        tr.age++; tr.lost = 0;
+        tr.conf = Math.min(1, tr.conf + 0.08);
+      } else {
+        tr.lost++;
+        tr.x += (tr.vx || 0) * 0.6;
+        tr.y += (tr.vy || 0) * 0.6;
+        tr.conf = Math.max(0, tr.conf - 0.12);
+      }
+    }
+    _aiScan.tracks = _aiScan.tracks.filter(tr => tr.lost < 12 && tr.conf > 0.05);
+    // Spawn new tracks for unmatched detections
+    for(let i = 0; i < detected.length; i++){
+      if(usedDet.has(i)) continue;
+      if(_aiScan.tracks.length >= targetTracks) break;
+      _aiScan.tracks.push({
+        id: _aiScan.nextId++,
+        label: 574000 + Math.floor(Math.random() * 999),
+        x: detected[i].x, y: detected[i].y, vx: 0, vy: 0,
+        age: 0, lost: 0, conf: 0.45, trail: []
+      });
+    }
+
+    // --- Motion bounding boxes (thin white, red flash on high-intensity blocks)
+    destCtx.lineWidth = 1;
+    destCtx.font = '8px ui-monospace, "SF Mono", Menlo, monospace';
+    destCtx.textBaseline = 'alphabetic';
+    for(const m of motion){
+      destCtx.strokeStyle = m.intensity > 35 ? 'rgba(255, 255, 255, 0.32)' : 'rgba(255, 255, 255, 0.16)';
+      destCtx.strokeRect(m.x + 0.5, m.y + 0.5, m.w - 1, m.h - 1);
+      // Occasional red anomaly marker on big motion
+      if(m.intensity > 50 && (_aiScan.frame + m.x + m.y) % 7 === 0){
+        destCtx.strokeStyle = 'rgba(255, 60, 60, 0.85)';
+        destCtx.strokeRect(m.x - 1, m.y - 1, m.w + 2, m.h + 2);
+      }
+      if(m.intensity > 20){
+        destCtx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        destCtx.fillText('mot=' + Math.floor(m.intensity), m.x + 2, m.y + 9);
+      }
+    }
+
+    // --- Faint constellation lines between nearby tracks
+    const connDist = Math.min(w, h) * 0.55;
+    for(let i = 0; i < _aiScan.tracks.length; i++){
+      for(let j = i + 1; j < _aiScan.tracks.length; j++){
+        const dx = _aiScan.tracks[j].x - _aiScan.tracks[i].x;
+        const dy = _aiScan.tracks[j].y - _aiScan.tracks[i].y;
+        const d2 = dx * dx + dy * dy;
+        if(d2 < connDist * connDist){
+          const fade = 1 - Math.sqrt(d2) / connDist;
+          destCtx.strokeStyle = 'rgba(255, 255, 255, ' + (0.06 + fade * 0.22) + ')';
+          destCtx.beginPath();
+          destCtx.moveTo(_aiScan.tracks[i].x, _aiScan.tracks[i].y);
+          destCtx.lineTo(_aiScan.tracks[j].x, _aiScan.tracks[j].y);
+          destCtx.stroke();
+        }
+      }
+    }
+
+    // --- Draw tracks: jitter, polyline trail, square marker, loose dashed bbox,
+    //     pseudo-code labels following the point
+    destCtx.font = '9px ui-monospace, "SF Mono", Menlo, monospace';
+    for(const tr of _aiScan.tracks){
+      const jx = (Math.random() - 0.5) * 1.4;
+      const jy = (Math.random() - 0.5) * 1.4;
+      const px = tr.x + jx;
+      const py = tr.y + jy;
+
+      // Trail as polyline of past positions
+      if(tr.trail.length >= 2){
+        destCtx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        destCtx.lineWidth = 1;
+        destCtx.beginPath();
+        destCtx.moveTo(tr.trail[0].x, tr.trail[0].y);
+        for(let i = 1; i < tr.trail.length; i++){
+          destCtx.lineTo(tr.trail[i].x, tr.trail[i].y);
+        }
+        destCtx.lineTo(px, py);
+        destCtx.stroke();
+      }
+
+      // Square tracking marker — bigger and brighter
+      const mk = 14;
+      destCtx.lineWidth = 1.4;
+      destCtx.strokeStyle = 'rgba(255, 255, 255, ' + (0.75 + tr.conf * 0.25) + ')';
+      destCtx.strokeRect(px - mk * 0.5, py - mk * 0.5, mk, mk);
+      destCtx.lineWidth = 1;
+
+      // Hard inner pixel
+      destCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+      destCtx.fillRect(Math.floor(px) - 1, Math.floor(py) - 1, 3, 3);
+
+      // Dashed loose bounding box (slow pulse) — more visible
+      const bb = 26 + Math.floor(Math.sin(tSec * 1.4 + tr.id) * 6);
+      destCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      destCtx.setLineDash([3, 4]);
+      destCtx.strokeRect(px - bb, py - bb, bb * 2, bb * 2);
+      destCtx.setLineDash([]);
+
+      // Labels following the point (jittering coords, conf, age, pseudo-code)
+      const labX = Math.floor(px + 12);
+      const labY = Math.floor(py - 12);
+      destCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+      destCtx.fillText(String(tr.label), labX, labY);
+      destCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      destCtx.fillText('x:' + Math.floor(px) + ' y:' + Math.floor(py), labX, labY + 11);
+      destCtx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      destCtx.fillText('conf=' + (tr.conf * 100).toFixed(0) + ' age=' + tr.age, labX, labY + 22);
+      // Pseudo-code fragment that rotates per frame for an "exposed-internals" feel
+      if((tr.id + _aiScan.frame) % 5 === 0){
+        const codes = ['track.predict()', 'KF.update(z)', 'iou=0.74', 'cls=hand', 'desc.match()'];
+        destCtx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+        destCtx.fillText(codes[(tr.id + _aiScan.frame) % codes.length], labX, labY + 30);
+      }
+    }
+
+    _aiScan.frame++;
   }
-  
+
   // Global storage for dots metadata (built once per render)
   let dotsMetadata = [];
   // Global storage for Displace (3D) particles metadata
   let displaceMetadata = [];
+  // Global storage for ASCII (Signs) glyph metadata — used to animate individual characters
+  let asciiMetadata = [];
+  let asciiFontSize = 12;
+
+  // ASCII (Signs) animation: redraws every glyph each frame with per-mode offset / replacement / fade
+  function applyASCIIAnimation(destCtx, sourceCanvas, w, h, t, tSec){
+    // Pixel-level effects ignore glyph metadata — delegate to applyModernEffect
+    if(animMode === 'pixelate' || animMode === 'pixelhd' || animMode === 'aiscan'){
+      return applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, animMode);
+    }
+
+    const meta = asciiMetadata;
+    if(!meta || meta.length === 0){
+      destCtx.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+
+    destCtx.clearRect(0, 0, w, h);
+    destCtx.font = asciiFontSize + 'px monospace';
+    destCtx.textAlign = 'center';
+    destCtx.textBaseline = 'middle';
+
+    // Shuffle character pool — used by shuffle/glitch
+    const pool = ['.', "'", ':', ';', '!', '+', '=', '^', '*', '#', 'x', 'X', 'o', 'O', '%', '&', '@', '$', '8', 'W', 'M', 'B'];
+
+    // Particle cycle for radial dissolve
+    const cycleTime = 3.5 / Math.max(0.2, animSpeed);
+    const phase = (tSec % cycleTime) / cycleTime;
+    const tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
+    const cx = w * 0.5, cy = h * 0.5;
+
+    // Chromatic mode draws RGB triplets via globalCompositeOperation
+    if(animMode === 'chromatic'){
+      const shift = Math.sin(t * 0.8) * animAmp * 14;
+      destCtx.globalCompositeOperation = 'screen';
+      for(let i = 0; i < meta.length; i++){
+        const p = meta[i];
+        destCtx.fillStyle = 'rgba(255, 80, 80, 0.75)';
+        destCtx.fillText(p.char, p.x - shift, p.y);
+        destCtx.fillStyle = 'rgba(80, 255, 120, 0.75)';
+        destCtx.fillText(p.char, p.x, p.y);
+        destCtx.fillStyle = 'rgba(80, 140, 255, 0.75)';
+        destCtx.fillText(p.char, p.x + shift, p.y);
+      }
+      destCtx.globalCompositeOperation = 'source-over';
+      return;
+    }
+
+    destCtx.fillStyle = '#000';
+
+    for(let i = 0; i < meta.length; i++){
+      const p = meta[i];
+      let ox = 0, oy = 0, alpha = 1, char = p.char;
+
+      if(animMode === 'flow'){
+        ox = Math.sin((p.x * 0.02 + p.y * 0.02) + t * animFreq) * animAmp * 24;
+        oy = Math.cos((p.x * 0.02 - p.y * 0.02) + t * animFreq) * animAmp * 16;
+      } else if(animMode === 'liquid'){
+        const s = 0.006 * animFreq;
+        const nx = Math.sin(p.x*s + p.y*s*0.7 + t) * Math.cos(p.y*s*1.3 - t*0.5);
+        const ny = Math.sin(p.y*s - p.x*s*0.5 + t*0.7) * Math.cos(p.x*s*0.9 + t*0.3);
+        ox = nx * animAmp * 38;
+        oy = ny * animAmp * 38;
+      } else if(animMode === 'smoke'){
+        const t1 = tSec * 0.5 * Math.max(0.2, animSpeed);
+        ox = (Math.sin(p.x*0.008*animFreq + t1) + 0.5*Math.sin(p.x*0.022*animFreq + t1*1.7)) * animAmp * 55;
+        oy = (Math.cos(p.y*0.008*animFreq - t1*0.7) + 0.5*Math.cos(p.y*0.022*animFreq + t1*1.3)) * animAmp * 55;
+      } else if(animMode === 'glitch'){
+        const burstSeed = Math.floor(tSec * 6) + i * 0.31;
+        if(seededRandom(burstSeed) > 0.82){
+          ox = (seededRandom(burstSeed * 1.7) - 0.5) * animAmp * 90;
+          alpha = 0.4 + seededRandom(burstSeed * 2.3) * 0.6;
+          if(seededRandom(burstSeed * 3.1) > 0.5){
+            char = pool[Math.floor(seededRandom(burstSeed * 4.7) * pool.length)];
+          }
+        }
+      } else if(animMode === 'particle'){
+        const r1 = seededRandom(i * 0.13);
+        const r2 = seededRandom(i * 0.37 + 100);
+        const ang = Math.atan2(p.y - cy, p.x - cx) + (r1 - 0.5) * 1.2;
+        const dist = (0.4 + r2) * tri * animAmp * 220;
+        ox = Math.cos(ang) * dist;
+        oy = Math.sin(ang) * dist;
+        alpha = 1 - tri * 0.85;
+      }
+
+      if(alpha <= 0) continue;
+      if(alpha !== 1) destCtx.globalAlpha = alpha;
+      destCtx.fillText(char, p.x + ox, p.y + oy);
+      if(alpha !== 1) destCtx.globalAlpha = 1;
+    }
+  }
+
+
   // Shuffle animation integrator (time-accumulated for stable SPEED control)
   let shufflePhase = 0; // accumulated seconds scaled by SPEED
   let shufflePrevTSec = 0; // last tSec seen
@@ -1762,7 +2449,8 @@
     const sel = getSelectedPhoto();
     if(!sel) return null;
     const pw = photoLayer.width, ph = photoLayer.height;
-    const imgW = sel.image.width, imgH = sel.image.height;
+    const { w: imgW, h: imgH } = getPhotoSize(sel);
+    if(!imgW || !imgH) return null;
     const s = Math.min(pw/imgW, ph/imgH);
     const w = imgW * s * (sel.scale||1), h = imgH * s * (sel.scale||1);
     const x = (pw - w)/2 + (sel.offsetX||0), y = (ph - h)/2 + (sel.offsetY||0);
@@ -2125,7 +2813,7 @@
   function renderASCII(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const detailFactor = (detail - 10)/(90-10);
-    
+
     // Character sets grouped by visual density
     const charSets = {
       light: ['.', "'", '`', ',', '-', '_'],
@@ -2133,15 +2821,19 @@
       mediumDark: ['*', '#', 'x', 'X', 'o', 'O', '%', '&', '@'],
       dark: ['#', '@', '$', '%', '8', 'W', 'M', 'B']
     };
-    
+
     // Font size based on size slider (smaller = more characters, more detail)
     const fontSize = Math.max(6, Math.floor(size * 0.8));
     const step = fontSize * 0.6; // Character spacing
-    
+
     ctx.font = `${fontSize}px monospace`;
     ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    // Reset per-glyph metadata for animation
+    asciiMetadata = [];
+    asciiFontSize = fontSize;
     
     let seedCounter = 54321; // For randomness
     
@@ -2196,11 +2888,12 @@
         
         if(char !== ' '){
           ctx.fillText(char, x, y);
+          asciiMetadata.push({ x, y, char, dark, density: (dark < 0.25 ? 0 : dark < 0.5 ? 1 : dark < 0.75 ? 2 : 3) });
         }
       }
     }
   }
-  
+
   function renderGradient(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const detailFactor = (detail - 10)/(90-10);
@@ -2384,7 +3077,7 @@
     saveState(); // Save state before loading photo
     const bmp = await createImageBitmap(f);
     // push into photos (max 12)
-    if(photos.length >= 12) photos.shift();
+    if(photos.length >= 12) disposePhoto(photos.shift());
     photos.push({image:bmp, scale:1, offsetX:0, offsetY:0, pattern:'none', size:20, detail:50, invert:false});
     selectedIndex = photos.length - 1;
     originalPhoto = bmp;
@@ -2397,45 +3090,361 @@
     renderPhotomaker();
     // Show photo settings section
     $('#photomakerSection').classList.remove('hidden');
+    updateExportButton();
     // Clear input so same file can be loaded again
     e.target.value = '';
   });
+
+  // ===== Video upload + continuous render loop =====
+  // Continuous loop keeps the canvas in sync with playing video frames even when
+  // filter animation is off. When filtersAnimated is on, tickFilters already renders.
+  let _videoLoopScheduled = false;
+  function hasAnyVideo(){ return photos.some(p => p.isVideo); }
+  function ensureVideoLoop(){
+    if(_videoLoopScheduled || !hasAnyVideo()) return;
+    _videoLoopScheduled = true;
+    requestAnimationFrame(videoLoop);
+  }
+  function videoLoop(){
+    _videoLoopScheduled = false;
+    if(!hasAnyVideo()) return;
+    // Yield the canvas to the dedicated record loop while full-size export runs.
+    if(_recordingActive){
+      _videoLoopScheduled = true;
+      requestAnimationFrame(videoLoop);
+      return;
+    }
+    // Sole driver while there's a video on the canvas — renderPhotomaker itself
+    // applies the graphic filter and, if filtersAnimated is on, the animation effect.
+    renderPhotomaker();
+    _videoLoopScheduled = true;
+    requestAnimationFrame(videoLoop);
+  }
+  function disposePhoto(p){
+    if(!p) return;
+    if(p.isVideo && p.video){
+      try { p.video.pause(); } catch(_){}
+      if(p.videoUrl) URL.revokeObjectURL(p.videoUrl);
+    }
+  }
+
+  const videoInput = $('#videoInput');
+  videoInput?.addEventListener('change', async (e)=>{
+    const f = e.target.files?.[0];
+    if(!f) return;
+    saveState();
+    const videoEl = document.createElement('video');
+    videoEl.src = URL.createObjectURL(f);
+    videoEl.muted = true;
+    videoEl.loop = true;
+    videoEl.playsInline = true;
+    videoEl.autoplay = true;
+    try {
+      await new Promise((res, rej)=>{
+        videoEl.addEventListener('loadeddata', res, {once:true});
+        videoEl.addEventListener('error', () => rej(new Error('Video load error')), {once:true});
+      });
+    } catch(err){
+      URL.revokeObjectURL(videoEl.src);
+      alert('Не удалось загрузить видео. Поддерживаются mp4/webm/mov.');
+      e.target.value = '';
+      return;
+    }
+    try { await videoEl.play(); } catch(_){}
+    if(photos.length >= 12) disposePhoto(photos.shift());
+    photos.push({
+      image: null,
+      video: videoEl,
+      videoUrl: videoEl.src,
+      isVideo: true,
+      scale: 1, offsetX: 0, offsetY: 0,
+      pattern: 'none', size: 20, detail: 50, invert: false
+    });
+    selectedIndex = photos.length - 1;
+    const sel = document.getElementById('patternSelect');
+    if(sel) sel.value = 'none';
+    photoScale = 1; photoOffsetX = 0; photoOffsetY = 0;
+    syncUIFromSelected();
+    renderPhotomaker();
+    ensureVideoLoop();
+    $('#photomakerSection').classList.remove('hidden');
+    updateExportButton();
+    e.target.value = '';
+  });
   
-  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); });
+  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
   $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
   $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
   $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.invert = $('#invertPattern').checked; renderPhotomaker(); });
-  $('#animateFilter')?.addEventListener('change', ()=>{ 
-    filtersAnimated = $('#animateFilter').checked; 
-    animStart = performance.now(); 
-    if(filtersAnimated){ 
-      requestAnimationFrame(tickFilters); 
-      // Show video export button when animation is on
-      $('#exportVideo').style.display = 'flex';
+  // Decide what the EXPORT button should do right now:
+  //  - If there's a video in photos → "DOWNLOAD VIDEO" (full-length capture)
+  //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
+  //  - Else → hidden
+  function updateExportButton(){
+    const btn = document.getElementById('exportVideo');
+    const lbl = document.getElementById('exportVideoLabel');
+    if(!btn || !lbl) return;
+    if(btn.dataset.busy === '1') return; // do not stomp on running recording UI
+    const hasVideo = photos.some(p => p.isVideo);
+    if(hasVideo){
+      btn.style.display = 'flex';
+      btn.dataset.mode = 'fullvideo';
+      lbl.textContent = 'DOWNLOAD VIDEO';
+    } else if(filtersAnimated){
+      btn.style.display = 'flex';
+      btn.dataset.mode = 'anim5s';
+      lbl.textContent = 'RECORD VIDEO (5S)';
     } else {
-      $('#exportVideo').style.display = 'none';
+      btn.style.display = 'none';
+      btn.dataset.mode = '';
     }
-    renderPhotomaker(); 
-  });
+  }
   $('#animSpeed')?.addEventListener('input', (e)=>{ animSpeed = parseFloat(e.target.value||'1')||1; });
-  $('#animMode')?.addEventListener('change', ()=>{ animMode = $('#animMode').value; if(filtersAnimated) requestAnimationFrame(tickFilters); else renderPhotomaker(); });
-  $('#animAmp')?.addEventListener('input', (e)=>{ animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) requestAnimationFrame(tickFilters); });
-  $('#animFreq')?.addEventListener('input', (e)=>{ animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) requestAnimationFrame(tickFilters); });
+  $('#animMode')?.addEventListener('change', ()=>{
+    animMode = $('#animMode').value;
+    // Mode acts as the on/off switch — "off" disables animation, anything else enables it
+    const shouldAnimate = animMode !== 'off';
+    if(shouldAnimate !== filtersAnimated){
+      filtersAnimated = shouldAnimate;
+      if(filtersAnimated) animStart = performance.now();
+      updateExportButton();
+    }
+    if(filtersAnimated) ensureTickFilters();
+    renderPhotomaker();
+  });
+  $('#animAmp')?.addEventListener('input', (e)=>{ animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) ensureTickFilters(); });
+  $('#animFreq')?.addEventListener('input', (e)=>{ animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) ensureTickFilters(); });
   
   // Video export
   let videoRecorder = null;
   let videoChunks = [];
   let isRecording = false; // Flag to track recording state
   let syntheticTime = 0; // Synthetic time for smooth video animation
+  // Full-length video capture at the source video's native resolution.
+  // We temporarily swap the global render canvases (photoLayer/animCanvas/offscreen)
+  // for ones sized to videoWidth × videoHeight, run renderPhotomaker once per
+  // decoded video frame, and capture the result through MediaRecorder.
+  async function exportFullVideo(p, btn){
+    const lbl = document.getElementById('exportVideoLabel');
+    const origText = lbl.textContent;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+
+    const v = p.video;
+    const vW = v.videoWidth || 1280;
+    const vH = v.videoHeight || 720;
+
+    // Save originals so we can restore the live display pipeline after recording
+    const origPhotoLayer = photoLayer;
+    const origPhotoCtx   = photoCtx;
+    const origAnimCanvas = animCanvas;
+    const origAnimCtx    = animCtx;
+    const origOffscreen  = offscreen;
+    const origOffctx     = offctx;
+    const wasLoop = v.loop;
+    v.loop = false;
+
+    // Record-time canvases at source video resolution
+    const recPhotoLayer = document.createElement('canvas');
+    recPhotoLayer.width = vW; recPhotoLayer.height = vH;
+    const recPhotoCtx   = recPhotoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
+    const recAnimCanvas = document.createElement('canvas');
+    recAnimCanvas.width = vW; recAnimCanvas.height = vH;
+    const recAnimCtx    = recAnimCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+    const recOffscreen  = document.createElement('canvas');
+    recOffscreen.width  = vW; recOffscreen.height = vH;
+    const recOffctx     = recOffscreen.getContext('2d', { alpha: false, willReadFrequently: true });
+
+    // Codec preference: MP4 first. It downloads as a regular file (Chrome
+    // doesn't auto-open .mp4 in an inline viewer the way it does .webm),
+    // and macOS / Windows / mobile all play it natively in QuickTime / Photos /
+    // media players. Fall back to WebM only if MP4 isn't supported.
+    let mimeType, fileExt;
+    if(MediaRecorder.isTypeSupported('video/mp4')){ mimeType = 'video/mp4'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')){ mimeType = 'video/mp4;codecs=avc1.42E01E'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
+    else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')){ mimeType = 'video/webm;codecs=vp8'; fileExt = 'webm'; }
+    else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
+    else { mimeType = ''; fileExt = 'webm'; }
+
+    // Bitrate scaled to pixel count so 4K videos don't get crushed and 480p don't get bloated
+    const bitrate = Math.max(4_000_000, Math.min(40_000_000, Math.round(vW * vH * 0.15)));
+
+    // Composite canvas — this is what MediaRecorder captures. We layer the
+    // WebGL gradient background here first, then overlay recPhotoLayer (which
+    // holds filter+animation, often on a transparent background). Without this
+    // composite, filters like Signs (black glyphs on transparent) get encoded
+    // as fully-black video because the recorder has no real background.
+    const recCompCanvas = document.createElement('canvas');
+    recCompCanvas.width = vW; recCompCanvas.height = vH;
+    const recCompCtx = recCompCanvas.getContext('2d', { alpha: false });
+    recCompCtx.fillStyle = '#000';
+    recCompCtx.fillRect(0, 0, vW, vH);
+
+    // Attach the composite canvas to the DOM off-screen. Some browsers
+    // (notably Safari) won't deliver frames from canvas.captureStream() when
+    // the canvas is fully detached from the document.
+    recCompCanvas.style.cssText = 'position:fixed;left:-99999px;top:0;width:1px;height:1px;pointer-events:none;opacity:0';
+    document.body.appendChild(recCompCanvas);
+
+    const stream = recCompCanvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
+    const chunks = [];
+    recorder.ondataavailable = (e)=> { if(e.data && e.data.size > 0) chunks.push(e.data); };
+
+    let renderHandle = null;
+    let useVFC = typeof v.requestVideoFrameCallback === 'function';
+    function recordFrame(){
+      if(!_recordingActive) return;
+      // 1) Run normal render path: filter + animation → recPhotoLayer
+      renderPhotomaker();
+      // 2) Composite into recCompCanvas: gradient base (scaled) + overlay
+      recCompCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, vW, vH);
+      recCompCtx.drawImage(recPhotoLayer, 0, 0);
+      if(useVFC){
+        renderHandle = v.requestVideoFrameCallback(recordFrame);
+      } else {
+        renderHandle = requestAnimationFrame(recordFrame);
+      }
+    }
+
+    // Scale per-photo size sliders so filter density looks the same in the
+    // recording as on screen. The on-screen photoLayer is typically smaller
+    // than the native video resolution (e.g. 800px display vs 1280px source),
+    // so a slider value of "20" looks chunky on display but tiny in the file.
+    // We scale by the ratio of canvas sizes and restore in finally.
+    const sizeScale = Math.max(
+      vW / Math.max(1, origPhotoLayer.width),
+      vH / Math.max(1, origPhotoLayer.height)
+    );
+    const origPhotoSizes = photos.map(pp => pp.size);
+    if(sizeScale > 1.05 || sizeScale < 0.95){
+      photos.forEach(pp => { if(typeof pp.size === 'number') pp.size = pp.size * sizeScale; });
+    }
+
+    try {
+      _recordingActive = true;
+      _skipPhotoLayerSync = true;
+
+      // Swap globals to record-sized canvases. From this point on, every
+      // renderPhotomaker call writes into recPhotoLayer at native resolution.
+      photoLayer = recPhotoLayer; photoCtx = recPhotoCtx;
+      animCanvas = recAnimCanvas; animCtx = recAnimCtx;
+      offscreen  = recOffscreen;  offctx  = recOffctx;
+
+      // Rewind, then start playback + recorder
+      v.currentTime = 0;
+      await new Promise((res)=>{
+        const cb = ()=>{ v.removeEventListener('seeked', cb); res(); };
+        v.addEventListener('seeked', cb);
+        setTimeout(()=>{ v.removeEventListener('seeked', cb); res(); }, 800);
+      });
+      await v.play().catch(()=>{});
+
+      // Wait until the video actually has a decoded frame ready, otherwise
+      // drawImage(video) returns transparent and we record black frames.
+      await new Promise((res)=>{
+        let done = false;
+        const finish = ()=>{ if(!done){ done = true; res(); } };
+        if(useVFC){
+          v.requestVideoFrameCallback(()=> finish());
+        }
+        // Fallback: poll readyState for browsers without VFC (or if VFC is slow)
+        const start = performance.now();
+        const poll = ()=>{
+          if(done) return;
+          if(v.readyState >= 2 && v.currentTime >= 0){ finish(); return; }
+          if(performance.now() - start > 1500){ finish(); return; }
+          requestAnimationFrame(poll);
+        };
+        poll();
+      });
+
+      // First frame before recorder starts, so the stream has something to capture
+      renderPhotomaker();
+      recorder.start(100);
+      recordFrame();
+
+      // Wait until video reaches 'ended'
+      await new Promise((res)=>{
+        const onEnd = ()=>{ v.removeEventListener('ended', onEnd); clearInterval(timer); res(); };
+        v.addEventListener('ended', onEnd);
+        const timer = setInterval(()=>{
+          if(v.duration > 0 && isFinite(v.duration)){
+            const pct = Math.min(99, Math.floor((v.currentTime / v.duration) * 100));
+            lbl.textContent = 'RECORDING ' + pct + '%';
+          }
+        }, 150);
+        if(v.duration > 0 && isFinite(v.duration)){
+          setTimeout(()=>{ v.removeEventListener('ended', onEnd); clearInterval(timer); res(); }, (v.duration + 2) * 1000);
+        }
+      });
+
+      // Let MediaRecorder flush trailing frames before stopping
+      await new Promise(r => setTimeout(r, 300));
+      _recordingActive = false;
+      if(useVFC && renderHandle != null){ try { v.cancelVideoFrameCallback(renderHandle); } catch(_){} }
+      else if(renderHandle != null){ cancelAnimationFrame(renderHandle); }
+      recorder.stop();
+      await new Promise((r)=> recorder.addEventListener('stop', r, {once:true}));
+
+      // Force the browser to save the file instead of opening it inline.
+      // Chrome treats blob URLs with a known media MIME ("video/webm") as
+      // playable and opens them in a viewer tab; rebuilding the blob with
+      // 'application/octet-stream' forces a download.
+      const blob = new Blob(chunks, { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gradient-painter-' + vW + 'x' + vH + '-' + Date.now() + '.' + fileExt;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    } catch(err){
+      console.error('Full video export error:', err);
+      alert('Ошибка записи видео: ' + (err && err.message ? err.message : err));
+    } finally {
+      _recordingActive = false;
+      // Restore per-photo size sliders (we scaled them up for the higher-res capture)
+      photos.forEach((pp, i) => { if(typeof origPhotoSizes[i] === 'number') pp.size = origPhotoSizes[i]; });
+      // Remove the off-screen composite canvas from the document
+      if(recCompCanvas.parentNode) recCompCanvas.parentNode.removeChild(recCompCanvas);
+      if(recPhotoLayer.parentNode) recPhotoLayer.parentNode.removeChild(recPhotoLayer);
+      // Restore live display canvases
+      photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+      animCanvas = origAnimCanvas; animCtx = origAnimCtx;
+      offscreen  = origOffscreen;  offctx  = origOffctx;
+      _skipPhotoLayerSync = false;
+      v.loop = wasLoop;
+      try { v.currentTime = 0; await v.play(); } catch(_){}
+      btn.dataset.busy = '';
+      btn.disabled = false;
+      lbl.textContent = origText;
+      updateExportButton();
+      // Kick the regular video loop back into life so the display canvas updates
+      ensureVideoLoop();
+      renderPhotomaker();
+    }
+  }
+
   $('#exportVideo')?.addEventListener('click', async ()=>{
+    const btn = $('#exportVideo');
+    if(btn.dataset.busy === '1') return;
+    // Mode A: download the source video fully through filter + animation
+    const videoPhoto = photos.find(p => p.isVideo);
+    if(videoPhoto){
+      return exportFullVideo(videoPhoto, btn);
+    }
+    // Mode B (legacy): 5-second synthetic-time animation recording for a photo
     if(!filtersAnimated || photos.length===0){
       alert('Включите анимацию и загрузите фото');
       return;
     }
-    
-    const btn = $('#exportVideo');
-    const origText = btn.textContent;
-    
+
+    const lbl = document.getElementById('exportVideoLabel');
+    const origText = lbl ? lbl.textContent : '';
+
     try {
       // Create a temporary canvas to capture the composite (WebGL + photo layer)
       const captureCanvas = document.createElement('canvas');
@@ -2477,7 +3486,7 @@
         a.download = `animation-${Date.now()}.${fileExt}`;
         a.click();
         URL.revokeObjectURL(url);
-        btn.textContent = origText;
+        if(lbl) lbl.textContent = origText;
       };
       
       // Start recording with data chunks every 100ms for stability
@@ -2505,15 +3514,15 @@
           // Wait longer for final frames to be encoded
           setTimeout(()=>{
             videoRecorder.stop();
-            btn.textContent = origText;
+            if(lbl) lbl.textContent = origText;
             console.log(`Recording complete: ${elapsed.toFixed(0)}ms, ${frameCount} frames, using ${mimeType}`);
           }, 500);
           return;
         }
-        
+
         // Update progress
         const progress = Math.floor((elapsed / targetDuration) * 100);
-        btn.textContent = `RECORDING ${progress}%`;
+        if(lbl) lbl.textContent = `RECORDING ${progress}%`;
         
         // Increment synthetic time by FIXED step (guarantees smooth animation)
         // Apply animSpeed to respect user's speed setting
@@ -2540,7 +3549,7 @@
     } catch(err){
       console.error('Video export error:', err);
       alert('Ошибка записи видео: ' + err.message);
-      btn.textContent = origText;
+      if(lbl) lbl.textContent = origText;
     }
   });
   
