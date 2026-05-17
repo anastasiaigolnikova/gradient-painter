@@ -1767,7 +1767,7 @@
     if(mode === 'liquid')    return effectLiquid(destCtx, w, h, t, tSec);
     if(mode === 'smoke')     return effectSmoke(destCtx, w, h, t, tSec);
     if(mode === 'glitch')    return effectGlitch(destCtx, sourceCanvas, w, h, t, tSec);
-    if(mode === 'chromatic') return effectChromatic(destCtx, w, h, t, tSec);
+    if(mode === 'chromatic') return effectChromatic(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'pixelate')  return effectPixelate(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'particle')  return effectParticle(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'pixelhd')   return effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec);
@@ -1944,24 +1944,68 @@
     }
   }
 
-  // RGB chromatic split: R/B channels drift horizontally, G stays put, pulses
-  function effectChromatic(destCtx, w, h, t, tSec){
-    const imgData = animCtx.getImageData(0, 0, w, h);
-    const src = imgData.data;
-    const out = new Uint8ClampedArray(src.length);
-    const shift = (Math.sin(t * 2.0) * animAmp * 25) | 0; // 2.5× base rate
-    for(let y=0; y<h; y++){
-      for(let x=0; x<w; x++){
-        const di = (y*w + x)*4;
-        const xR = Math.max(0, Math.min(w-1, x - shift));
-        const xB = Math.max(0, Math.min(w-1, x + shift));
-        out[di]   = src[(y*w + xR)*4];
-        out[di+1] = src[di + 1];
-        out[di+2] = src[(y*w + xB)*4 + 2];
-        out[di+3] = src[di + 3];
+  // RGB chromatic split: R/B channels drift horizontally, G stays put, pulses.
+  // Two implementations because the source canvas can be either:
+  //   (a) full-colour photo (no filter) — per-channel pixel shift gives the
+  //       classic "red on one edge, blue on the other" aberration.
+  //   (b) monochrome filter output (dots, ASCII, weave, shapes, …) — these
+  //       are black-on-transparent, so shifting R/G/B values is invisible
+  //       (everything is 0). Instead we layer three colour-tinted copies of
+  //       the source at offsets with additive blending. Black silhouettes
+  //       become red+blue fringe with white centres = visible chromatic split.
+  function effectChromatic(destCtx, sourceCanvas, w, h, t, tSec){
+    const shift = (Math.sin(t * 2.0) * animAmp * 25);
+    const sel = getSelectedPhoto();
+    const pattern = sel ? (sel.pattern || 'none') : 'none';
+
+    if(pattern === 'none'){
+      // (a) per-channel shift — preserves the original photo colours
+      const imgData = animCtx.getImageData(0, 0, w, h);
+      const src = imgData.data;
+      const out = new Uint8ClampedArray(src.length);
+      const s = shift | 0;
+      for(let y=0; y<h; y++){
+        for(let x=0; x<w; x++){
+          const di = (y*w + x)*4;
+          const xR = Math.max(0, Math.min(w-1, x - s));
+          const xB = Math.max(0, Math.min(w-1, x + s));
+          out[di]   = src[(y*w + xR)*4];
+          out[di+1] = src[di + 1];
+          out[di+2] = src[(y*w + xB)*4 + 2];
+          out[di+3] = src[di + 3];
+        }
       }
+      destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+      return;
     }
-    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+
+    // (b) colour-tinted offset layers for monochrome filter content
+    destCtx.clearRect(0, 0, w, h);
+    if(!window._chTmp){
+      window._chTmp = document.createElement('canvas');
+      window._chTmpCtx = window._chTmp.getContext('2d', { alpha: true });
+    }
+    const tmp = window._chTmp;
+    if(tmp.width !== w) tmp.width = w;
+    if(tmp.height !== h) tmp.height = h;
+    const tctx = window._chTmpCtx;
+
+    const tint = (hex) => {
+      tctx.globalCompositeOperation = 'source-over';
+      tctx.clearRect(0, 0, w, h);
+      tctx.drawImage(sourceCanvas, 0, 0);
+      // Replace the source's RGB with a solid colour, keep its alpha shape
+      tctx.globalCompositeOperation = 'source-in';
+      tctx.fillStyle = hex;
+      tctx.fillRect(0, 0, w, h);
+      tctx.globalCompositeOperation = 'source-over';
+    };
+
+    destCtx.globalCompositeOperation = 'lighter';
+    tint('#ff0000'); destCtx.drawImage(tmp, -shift, 0);
+    tint('#00ff00'); destCtx.drawImage(tmp,  0,      0);
+    tint('#0000ff'); destCtx.drawImage(tmp,  shift,  0);
+    destCtx.globalCompositeOperation = 'source-over';
   }
 
   // Pixelate: turn image into mosaic of large square pixels; size pulses with time
