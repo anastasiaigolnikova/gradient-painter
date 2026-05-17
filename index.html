@@ -87,7 +87,9 @@
     .btn-undo:hover{background:var(--bg-hover);border-color:var(--b-hover)}
 
     .photomaker{margin-top:16px}
-    .lab{display:block;margin:10px 0 4px;letter-spacing:.12em;font-size:9px;color:var(--t-mute);font-weight:500}
+    .lab{display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 4px;letter-spacing:.12em;font-size:9px;color:var(--t-mute);font-weight:500}
+    .lab .val{letter-spacing:0;font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.55);font-weight:400}
+    .lab.disabled .val{color:rgba(255,255,255,0.25)}
 
     .btn-download{
       width:100%;height:var(--h);margin-top:10px;border:1px solid var(--b);border-radius:2px;
@@ -178,7 +180,7 @@
       <input id="cBot" type="color" value="#000000"/>
     </div>
 
-    <label class="lab">MID POSITION</label>
+    <label class="lab">MID POSITION<span class="val" id="midPosVal">0.50</span></label>
     <label class="range">
       <input id="midPos" type="range" min="0" max="1" step="0.001" value="0.5"/>
     </label>
@@ -252,10 +254,10 @@
         <option value="dispersion">Dispersion</option>
       </select>
 
-      <label class="lab">SIZE</label>
+      <label class="lab">SIZE<span class="val" id="patternSizeVal">20</span></label>
       <label class="range"><input id="patternSize" type="range" min="3" max="100" value="20"/></label>
 
-      <label class="lab">STRENGTH</label>
+      <label class="lab">STRENGTH<span class="val" id="detailLevelVal">50</span></label>
       <label class="range"><input id="detailLevel" type="range" min="10" max="90" value="50"/></label>
 
       <div class="checkbox-row">
@@ -280,11 +282,11 @@
           <option value="shuffle">Shuffle</option>
           <option value="reveal">Build / Reveal</option>
         </select>
-        <label class="lab">SPEED</label>
+        <label class="lab">SPEED<span class="val" id="animSpeedVal">1.0</span></label>
         <label class="range"><input id="animSpeed" type="range" min="0.2" max="5" step="0.1" value="1"/></label>
-        <label class="lab">AMPLITUDE</label>
+        <label class="lab">AMPLITUDE<span class="val" id="animAmpVal">0.30</span></label>
         <label class="range"><input id="animAmp" type="range" min="0" max="1" step="0.01" value="0.30"/></label>
-        <label class="lab">FREQUENCY</label>
+        <label class="lab">FREQUENCY<span class="val" id="animFreqVal">1.20</span></label>
         <label class="range"><input id="animFreq" type="range" min="0.5" max="3" step="0.05" value="1.20"/></label>
       </div>
 
@@ -669,6 +671,7 @@
     sv('animSpeed', animSpeed);
     sv('animAmp', animAmp);
     sv('animFreq', animFreq);
+    if(typeof window.refreshSliderReadouts === 'function') window.refreshSliderReadouts();
 
     // Restore svgLoaded state
     svgLoaded = prevState.svgLoaded;
@@ -796,6 +799,7 @@
     setVal('animAmp', 0.3);
     setVal('animFreq', 1.2);
     const inv = document.getElementById('invertPattern'); if(inv) inv.checked = false;
+    if(typeof window.refreshSliderReadouts === 'function') window.refreshSliderReadouts();
 
     if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
     if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
@@ -891,7 +895,37 @@
   $('#cMid').oninput = ()=> draw();
   $('#cBot').oninput = ()=> draw();
   $('#midPos').oninput = ()=> draw();
-  
+
+  // ===== Slider numeric readouts =====
+  // Each slider gets a small live numeric label next to its name so the user
+  // can see exactly where they're at — way more useful than guessing from
+  // thumb position. Format per slider keeps to a sensible precision so the
+  // numbers don't jitter (1.0 not 1.0000000…).
+  const _readoutUpdaters = [];
+  function bindSliderReadout(sliderId, valId, formatter){
+    const sl = document.getElementById(sliderId);
+    const vl = document.getElementById(valId);
+    if(!sl || !vl) return;
+    const fmt = formatter || ((v)=> String(v));
+    const update = ()=> { vl.textContent = fmt(parseFloat(sl.value)); };
+    sl.addEventListener('input', update);
+    _readoutUpdaters.push(update);
+    update();
+  }
+  // Called after any programmatic slider value change (undo / reset /
+  // syncUIFromSelected) — the 'input' event doesn't fire on .value=… so we
+  // refresh all readouts in one pass.
+  window.refreshSliderReadouts = function(){ _readoutUpdaters.forEach(u => u()); };
+  const fmtInt   = (v)=> String(Math.round(v));
+  const fmt1     = (v)=> v.toFixed(1);
+  const fmt2     = (v)=> v.toFixed(2);
+  bindSliderReadout('midPos',      'midPosVal',      fmt2);
+  bindSliderReadout('patternSize', 'patternSizeVal', fmtInt);
+  bindSliderReadout('detailLevel', 'detailLevelVal', fmtInt);
+  bindSliderReadout('animSpeed',   'animSpeedVal',   fmt1);
+  bindSliderReadout('animAmp',     'animAmpVal',     fmt2);
+  bindSliderReadout('animFreq',    'animFreqVal',    fmt2);
+
   // UNDO buttons handlers (both buttons work the same way)
   const undoButtons = document.querySelectorAll('.btn-undo');
   undoButtons.forEach(btn => {
@@ -1504,6 +1538,7 @@
     const dl = document.getElementById('detailLevel'); if(dl) dl.value = String(p.detail ?? 50);
     const inv = document.getElementById('invertPattern'); if(inv) inv.checked = !!p.invert;
     syncAnimControlsForPattern();
+    if(typeof window.refreshSliderReadouts === 'function') window.refreshSliderReadouts();
   }
   let originalPhoto = null; // keep for backward-compat, mirrors selected photo
   // Transform state (applies to selected photo)
