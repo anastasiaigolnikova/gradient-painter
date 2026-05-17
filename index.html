@@ -706,19 +706,48 @@
   });
   canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); brushPx = Math.max(1, Math.min(64, brushPx + (e.deltaY<0?1:-1))); }, {passive:false});
   $('#clear').onclick = ()=>{
+    // RESET — reset all filters / animation / sliders to defaults, but KEEP
+    // the uploaded photo or video on the canvas. The user explicitly wants to
+    // start over with effects without re-uploading. To wipe everything (drop
+    // photos too) use Escape or upload a new file.
     svgLoaded = false;
     initState();
     draw();
-    // Clear all photos (and release any video resources)
-    photos.forEach(disposePhoto);
-    photos = [];
-    selectedIndex = -1;
-      originalPhoto = null;
-      photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
-      // Hide photo settings section when photo is cleared
-      $('#photomakerSection').classList.add('hidden');
-      updateExportButton();
-      updateEmptyHint();
+
+    // Reset each loaded photo's per-photo state to defaults
+    photos.forEach(p => {
+      p.pattern = 'none';
+      p.size = 20;
+      p.detail = 50;
+      p.invert = false;
+    });
+
+    // Reset animation globals
+    filtersAnimated = false;
+    animMode = 'off';
+    animSpeed = 1;
+    animAmp = 0.3;
+    animFreq = 1.2;
+
+    // Sync UI controls back to defaults
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el){ el.value = String(v); } };
+    setVal('patternSelect', 'none');
+    setVal('patternSize', 20);
+    setVal('detailLevel', 50);
+    setVal('animMode', 'off');
+    setVal('animSpeed', 1);
+    setVal('animAmp', 0.3);
+    setVal('animFreq', 1.2);
+    const inv = document.getElementById('invertPattern'); if(inv) inv.checked = false;
+
+    if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
+    if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
+
+    // Re-render with cleared filter/animation
+    renderPhotomaker();
+    if(typeof ensureVideoLoop === 'function' && hasAnyVideo()) ensureVideoLoop();
+    updateExportButton();
+    updateEmptyHint();
   };
   $('#download').onclick = ()=>{
     // If animation is active OR a video is loaded → user expects a moving file.
@@ -1419,6 +1448,10 @@
   function renderPhotomaker(){
     syncPhotoLayerSize();
     const pw = photoLayer.width, ph = photoLayer.height;
+    // Bail if the canvas hasn't been laid out yet — calling getImageData on
+    // a 0-width canvas below throws IndexSizeError and would otherwise leave
+    // the export loop's busy flag stuck.
+    if(pw <= 0 || ph <= 0) return;
     photoCtx.clearRect(0,0,pw,ph);
 
     if(photos.length===0) return;
@@ -1849,9 +1882,12 @@
 
   // Pixelate: turn image into mosaic of large square pixels; size pulses with time
   function effectPixelate(destCtx, sourceCanvas, w, h, t, tSec){
-    // Pixel size from AMPLITUDE; gentle pulse with time
-    const base = 3 + animAmp * 50; // ~3..53 px
-    const pulse = 0.75 + Math.sin(t * 0.6) * 0.25; // 0.5..1
+    // Base mosaic pixel size driven by SIZE slider (user expectation), gentle
+    // time pulse on top. AMPLITUDE only modulates the pulse depth.
+    const sel = getSelectedPhoto();
+    const sizeSlider = sel ? (sel.size ?? 20) : 20;
+    const base = Math.max(3, sizeSlider * 1.0); // ~3..100 px from SIZE
+    const pulse = 0.85 + Math.sin(t * 0.6) * 0.15 * animAmp; // small breathing
     const pix = Math.max(2, Math.floor(base * pulse));
     const ow = Math.max(1, Math.floor(w / pix));
     const oh = Math.max(1, Math.floor(h / pix));
@@ -1871,7 +1907,10 @@
   // Particle dissolve: image broken into tiles that explode outward and reassemble in a loop
   function effectParticle(destCtx, sourceCanvas, w, h, t, tSec){
     destCtx.clearRect(0,0,w,h);
-    const tile = Math.max(6, Math.floor(28 - animFreq * 6));
+    // Tile size driven by SIZE slider so user can dial the particle granularity
+    const sel = getSelectedPhoto();
+    const sizeSlider = sel ? (sel.size ?? 20) : 20;
+    const tile = Math.max(4, Math.floor(sizeSlider * 0.6));
     const cycleTime = 3.5 / Math.max(0.2, animSpeed);
     const phase = (tSec % cycleTime) / cycleTime; // 0..1
     // Symmetric: dissolve out then back in (triangle wave)
@@ -1914,7 +1953,10 @@
     // gradient underneath to show through. A black fillRect would hide every
     // filter that uses black ink (Lines, Halftone, Signs, etc.).
     destCtx.clearRect(0, 0, w, h);
-    const blockSize = Math.max(16, Math.floor(70 - animFreq * 14));
+    // Block size driven by SIZE slider; FREQUENCY now only modulates flicker rate
+    const sel = getSelectedPhoto();
+    const sizeSlider = sel ? (sel.size ?? 20) : 20;
+    const blockSize = Math.max(8, Math.floor(sizeSlider * 1.5));
     const cols = Math.ceil(w / blockSize);
     const rows = Math.ceil(h / blockSize);
     const cycle = 5.0 / Math.max(0.2, animSpeed);
