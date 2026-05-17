@@ -296,6 +296,7 @@
 
     <button id="download" class="btn-download"><span id="downloadLabel">DOWNLOAD PNG</span></button>
     <button id="download10" class="btn-download" style="display:none;margin-top:8px"><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
+    <button id="manualRec" class="btn-download" style="display:none;margin-top:8px"><span id="manualRecLabel">● RECORD LIVE</span></button>
 
     <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
       <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
@@ -3798,9 +3799,22 @@
       }
     }
     if(dl10){
-      // Show the 10s option only when a 5/10s loop choice actually makes sense
-      const showTen = filtersAnimated && !hasVideo;
+      // 10s option: shown when any motion content is present (animated photo
+      // OR video). For video it caps the export at 10s instead of full length.
+      const showTen = filtersAnimated || hasVideo;
+      if(hasVideo){
+        const d10Lbl = document.getElementById('download10Label');
+        if(d10Lbl) d10Lbl.textContent = 'DOWNLOAD VIDEO (10S CLIP)';
+      } else {
+        const d10Lbl = document.getElementById('download10Label');
+        if(d10Lbl) d10Lbl.textContent = 'DOWNLOAD MP4 (10S)';
+      }
       dl10.style.display = showTen ? 'block' : 'none';
+    }
+    // Manual live recording is available whenever something is on canvas
+    const mRec = document.getElementById('manualRec');
+    if(mRec){
+      mRec.style.display = photos.length > 0 ? 'block' : 'none';
     }
     const btn = document.getElementById('exportVideo');
     if(btn){
@@ -3891,13 +3905,15 @@
   // jerky on heavy filters. WebCodecs VideoEncoder lets us assign exact
   // per-frame timestamps in microseconds, and runs offline — render can take
   // 200ms/frame and the resulting file is still mathematically perfect 30fps.
-  async function exportFullVideoWebCodecs(p, btn){
+  async function exportFullVideoWebCodecs(p, btn, maxDurationMs){
     // Update the label inside whichever button was used to trigger this
     // (DOWNLOAD or the hidden #exportVideo). Falls back to exportVideoLabel.
     const lbl = (btn && btn.querySelector('span')) || document.getElementById('exportVideoLabel');
     const origText = lbl ? lbl.textContent : '';
     btn.dataset.busy = '1';
     btn.disabled = true;
+    // Optional cap — if set, only encode up to maxDurationMs of the video
+    const capSec = (typeof maxDurationMs === 'number' && maxDurationMs > 0) ? (maxDurationMs / 1000) : null;
 
     const v = p.video;
     const fps = 30;
@@ -4105,7 +4121,8 @@
       const fpsOut = detectedFps;
       const frameDurUs = Math.round(1_000_000 / fpsOut);
       const keyframeEvery = Math.max(30, fpsOut * 2);
-      const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 10;
+      let duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 10;
+      if(capSec && capSec < duration) duration = capSec; // honor 10s cap
       const totalFrames = Math.max(1, Math.floor(duration * fpsOut));
       let encoded = 0;
 
@@ -4188,11 +4205,12 @@
     }
   }
 
-  async function exportFullVideo(p, btn){
+  async function exportFullVideo(p, btn, maxDurationMs){
     const lbl = (btn && btn.querySelector('span')) || document.getElementById('exportVideoLabel');
     const origText = lbl ? lbl.textContent : '';
     btn.dataset.busy = '1';
     btn.disabled = true;
+    const capSec = (typeof maxDurationMs === 'number' && maxDurationMs > 0) ? (maxDurationMs / 1000) : null;
 
     const v = p.video;
     // Cap recording resolution at 720p (longest side 1280). Per-pixel filters
@@ -4357,18 +4375,25 @@
       recorder.start(100);
       recordFrame();
 
-      // Wait until video reaches 'ended'
+      // Wait until video reaches 'ended', or maxDuration cap is hit
       await new Promise((res)=>{
         const onEnd = ()=>{ v.removeEventListener('ended', onEnd); clearInterval(timer); res(); };
         v.addEventListener('ended', onEnd);
+        const effectiveDur = capSec ? Math.min(capSec, isFinite(v.duration) ? v.duration : capSec) : (isFinite(v.duration) ? v.duration : 0);
         const timer = setInterval(()=>{
-          if(v.duration > 0 && isFinite(v.duration)){
-            const pct = Math.min(99, Math.floor((v.currentTime / v.duration) * 100));
+          if(effectiveDur > 0){
+            const pct = Math.min(99, Math.floor((v.currentTime / effectiveDur) * 100));
             lbl.textContent = 'RECORDING ' + pct + '%';
           }
+          if(capSec && v.currentTime >= capSec){
+            v.removeEventListener('ended', onEnd);
+            clearInterval(timer);
+            try { v.pause(); } catch(_){}
+            res();
+          }
         }, 150);
-        if(v.duration > 0 && isFinite(v.duration)){
-          setTimeout(()=>{ v.removeEventListener('ended', onEnd); clearInterval(timer); res(); }, (v.duration + 2) * 1000);
+        if(effectiveDur > 0){
+          setTimeout(()=>{ v.removeEventListener('ended', onEnd); clearInterval(timer); res(); }, (effectiveDur + 2) * 1000);
         }
       });
 
@@ -4430,15 +4455,15 @@
   async function runVideoExport(btn, lbl, durationMs){
     if(!btn) return;
     if(btn.dataset.busy === '1') return;
-    // Mode A: download the source video fully through filter + animation.
+    // Mode A: download the source video fully (or capped at durationMs) through filter + animation.
     const videoPhoto = photos.find(p => p.isVideo);
     if(videoPhoto){
       const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
       const hasMuxer = typeof window.Mp4Muxer !== 'undefined' && window.Mp4Muxer.Muxer;
       if(hasWebCodecs && hasMuxer){
-        return exportFullVideoWebCodecs(videoPhoto, btn);
+        return exportFullVideoWebCodecs(videoPhoto, btn, durationMs);
       }
-      return exportFullVideo(videoPhoto, btn);
+      return exportFullVideo(videoPhoto, btn, durationMs);
     }
     // Mode B: 5-second synthetic-time animation recording for a photo
     if(!filtersAnimated || photos.length===0){
@@ -4592,12 +4617,106 @@
     runVideoExport($('#exportVideo'), document.getElementById('exportVideoLabel'), 5000);
   });
 
-  // 10-second download variant — visible only for photo + animation (no video).
-  // Video export uses the source video's length and ignores duration.
+  // 10-second download variant — works for both photo+animation (5/10s loop)
+  // and video (10s clip — see maxDurationMs in export functions).
   $('#download10')?.addEventListener('click', ()=>{
     const btn = $('#download10');
     if(btn.dataset.busy === '1') return;
     runVideoExport(btn, document.getElementById('download10Label'), 10000);
+  });
+
+  // ===== Manual live recording =====
+  // Captures the live composite (WebGL gradient + photo/filter/animation layer)
+  // while the user manipulates sliders / dropdowns. Click to start, click to
+  // stop — the file downloads on stop. Useful for "show me what changing this
+  // filter does" social-media clips. No fixed duration, no synthetic time —
+  // wall-clock real-time, exactly what's on screen.
+  let _manualRec = null;
+  let _manualRecRAF = null;
+  let _manualRecTimer = null;
+  let _manualRecComp = null;
+  let _manualRecStart = 0;
+
+  function manualRecStart(){
+    if(_manualRec) return;
+    const pw = photoLayer.width, ph = photoLayer.height;
+    if(!pw || !ph || photos.length === 0){
+      alert('Сначала загрузите фото или видео');
+      return;
+    }
+
+    // Composite canvas — refreshed every RAF tick with current gl + photoLayer
+    const comp = document.createElement('canvas');
+    comp.width = pw; comp.height = ph;
+    const cctx = comp.getContext('2d', { alpha: false });
+    comp.style.cssText = 'position:fixed;left:-99999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(comp);
+    _manualRecComp = comp;
+
+    let mimeType = '', fileExt = 'webm';
+    if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.640028')){ mimeType = 'video/mp4;codecs=avc1.640028'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')){ mimeType = 'video/mp4;codecs=avc1.42E01E'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/mp4')){ mimeType = 'video/mp4'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
+    else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
+
+    const bitrate = Math.max(8_000_000, Math.min(20_000_000, Math.round(pw * ph * 30 * 0.12)));
+    const stream = comp.captureStream(30);
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
+    const chunks = [];
+    recorder.ondataavailable = (e)=>{ if(e.data && e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = ()=>{
+      const blob = new Blob(chunks, { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gradient-painter-live-${Date.now()}.${fileExt}`;
+      a.rel = 'noopener'; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 2000);
+      if(_manualRecComp?.parentNode) _manualRecComp.parentNode.removeChild(_manualRecComp);
+      _manualRecComp = null;
+      _manualRec = null;
+    };
+
+    function tick(){
+      if(!_manualRec) return;
+      // Composite: black base, scaled WebGL gradient, photoLayer (filter + anim) on top
+      cctx.fillStyle = '#000';
+      cctx.fillRect(0, 0, comp.width, comp.height);
+      cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, comp.width, comp.height);
+      if(photoLayer && photoLayer.width){
+        cctx.drawImage(photoLayer, 0, 0, photoLayer.width, photoLayer.height, 0, 0, comp.width, comp.height);
+      }
+      _manualRecRAF = requestAnimationFrame(tick);
+    }
+
+    recorder.start(100);
+    _manualRec = recorder;
+    _manualRecStart = performance.now();
+    tick();
+
+    // UI: turn the button into a stop button with running timer
+    const lbl = document.getElementById('manualRecLabel');
+    if(lbl) lbl.textContent = '■ STOP (0.0s)';
+    _manualRecTimer = setInterval(()=>{
+      const sec = ((performance.now() - _manualRecStart) / 1000).toFixed(1);
+      if(lbl) lbl.textContent = '■ STOP (' + sec + 's)';
+    }, 100);
+  }
+
+  function manualRecStop(){
+    if(!_manualRec) return;
+    if(_manualRecTimer){ clearInterval(_manualRecTimer); _manualRecTimer = null; }
+    if(_manualRecRAF != null){ cancelAnimationFrame(_manualRecRAF); _manualRecRAF = null; }
+    try { _manualRec.stop(); } catch(_) {}
+    const lbl = document.getElementById('manualRecLabel');
+    if(lbl) lbl.textContent = '● RECORD LIVE';
+  }
+
+  $('#manualRec')?.addEventListener('click', ()=>{
+    if(_manualRec) manualRecStop();
+    else manualRecStart();
   });
 
   // removed photoScale slider listener (scaling now on-canvas)
