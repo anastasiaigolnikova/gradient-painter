@@ -295,6 +295,7 @@
     </div>
 
     <button id="download" class="btn-download"><span id="downloadLabel">DOWNLOAD PNG</span></button>
+    <button id="download10" class="btn-download" style="display:none;margin-top:8px"><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
 
     <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
       <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
@@ -803,13 +804,13 @@
   $('#download').onclick = ()=>{
     // If animation is active OR a video is loaded → user expects a moving file.
     // Route to the unified video-export pipeline (uses the same button for
-    // busy state / progress label).
+    // busy state / progress label). Default 5-second loop for animated photos.
     const btn = $('#download');
     if(btn.dataset.busy === '1') return;
     const hasVideo = typeof photos !== 'undefined' && photos.some(p => p.isVideo);
     if(filtersAnimated || hasVideo){
       const lbl = document.getElementById('downloadLabel');
-      runVideoExport(btn, lbl);
+      runVideoExport(btn, lbl, 5000);
       return;
     }
 
@@ -2453,10 +2454,16 @@
       const partner = meta[pairIdx] || p;
       const isLeader = (i % 2) === 0; // arc direction key: one over, one under
 
-      // Phase keyed by PAIR (not individual i) — both members share it
+      // Phase keyed by PAIR (not individual i) — both members share it.
+      // SPEED controls migration rate. FREQ no longer doubles up with SPEED
+      // (was redundant); it now drives a per-element breathing pulse below.
       const pairSeed = Math.floor(i / 2) * 0.137;
-      const migPhase = tSec * 1.6 * speed * freqMul + seededRandom(pairSeed + 300) * Math.PI * 2;
-      const migT = Math.sin(migPhase) * 0.5 + 0.5; // 0..1 oscillation
+      const migPhase = tSec * 1.6 * speed + seededRandom(pairSeed + 300) * Math.PI * 2;
+      // AMPLITUDE now scales migration depth too — at AMP=0 elements barely
+      // wobble in place, at AMP=1 they swap fully. Floor of 0.15 keeps slider=0
+      // from looking totally frozen (still some hint of motion).
+      const swapDepth = 0.15 + animAmp * 0.85;
+      const migT = (Math.sin(migPhase) * 0.5 + 0.5) * swapDepth; // 0..swapDepth
 
       // Position swap: each member travels along the line between anchors
       const dx = partner.x - p.x;
@@ -2466,17 +2473,17 @@
       let perpX = 0, perpY = 0;
       if(segLen > 0.5){ perpX = -dy / segLen; perpY = dx / segLen; }
       // Arc magnitude: 0 at endpoints, peak at midpoint, scaled by AMPLITUDE
-      const arcMag = Math.sin(migT * Math.PI) * segLen * 0.35 * (0.4 + animAmp * 0.6);
+      const arcMag = Math.sin(migT / Math.max(0.01, swapDepth) * Math.PI) * segLen * 0.35 * (0.4 + animAmp * 0.6);
       const arcX = (isLeader ? +perpX : -perpX) * arcMag;
       const arcY = (isLeader ? +perpY : -perpY) * arcMag;
 
       const x = p.x + dx * migT + arcX;
       const y = p.y + dy * migT + arcY;
 
-      // ownPulse stays for backwards compat with rendering blocks below, but
-      // for true swap visuals we keep it minimal (size doesn't need to throb
-      // — the visible motion is the position swap itself).
-      const ownPulse = 1;
+      // FREQUENCY now drives a per-element breathing pulse on its own clock —
+      // each dot/glyph/shape pulses in size independently of the swap rhythm.
+      const ownPhase = tSec * 2.0 * freqMul + i * 0.41;
+      const ownPulse = 1 + Math.sin(ownPhase) * 0.18; // ~0.82..1.18
 
       if(mode === 'ascii'){
         // Glyph swap at half-cycle — character changes, position fixed
@@ -3728,12 +3735,15 @@
   //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
   //  - Else → hidden
   function updateExportButton(){
-    // The single DOWNLOAD button adapts its label based on what's currently
-    // on canvas (video / animated photo / static photo). The legacy
-    // #exportVideo button is hidden — runVideoExport() is reached via #download.
+    // The DOWNLOAD button adapts its label based on what's on canvas
+    // (video / animated photo / static photo). The 10S sibling appears
+    // only in the photo+animation case so the user can pick loop length.
+    // The legacy #exportVideo button is hidden — runVideoExport() is
+    // reached via #download.
     const hasVideo = photos.some(p => p.isVideo);
     const dlBtn = document.getElementById('download');
     const dlLbl = document.getElementById('downloadLabel');
+    const dl10  = document.getElementById('download10');
     if(dlLbl && dlBtn && dlBtn.dataset.busy !== '1'){
       if(hasVideo){
         dlLbl.textContent = 'DOWNLOAD VIDEO';
@@ -3742,6 +3752,11 @@
       } else {
         dlLbl.textContent = 'DOWNLOAD PNG';
       }
+    }
+    if(dl10){
+      // Show the 10s option only when a 5/10s loop choice actually makes sense
+      const showTen = filtersAnimated && !hasVideo;
+      dl10.style.display = showTen ? 'block' : 'none';
     }
     const btn = document.getElementById('exportVideo');
     if(btn){
@@ -4363,10 +4378,12 @@
 
   // Shared video-export entry point. Routes to:
   //  - exportFullVideoWebCodecs / exportFullVideo when a video is loaded
-  //  - 5-second synthetic-time MediaRecorder loop for animated photos
+  //  - N-second synthetic-time MediaRecorder loop for animated photos
   // The triggering button (#exportVideo or #download) gets its busy flag,
   // disabled state, and label updated by passing in (btn, lbl).
-  async function runVideoExport(btn, lbl){
+  // durationMs is the requested loop length (5000 or 10000) — only used for
+  // the photo+animation path; video export uses the source video's length.
+  async function runVideoExport(btn, lbl, durationMs){
     if(!btn) return;
     if(btn.dataset.busy === '1') return;
     // Mode A: download the source video fully through filter + animation.
@@ -4453,9 +4470,9 @@
       isRecording = true;
       syntheticTime = 0;
       
-      // Render loop for exactly 5 seconds with FIXED time step
+      // Render loop for exactly N seconds with FIXED time step (default 5s)
       const startTime = performance.now();
-      const targetDuration = 5000; // 5 seconds in ms
+      const targetDuration = Math.max(1000, durationMs || 5000);
       const fps = 30;
       const frameTimeStep = 1 / fps; // Fixed time increment per frame (in seconds)
       let frameCount = 0;
@@ -4528,7 +4545,15 @@
   }
 
   $('#exportVideo')?.addEventListener('click', ()=>{
-    runVideoExport($('#exportVideo'), document.getElementById('exportVideoLabel'));
+    runVideoExport($('#exportVideo'), document.getElementById('exportVideoLabel'), 5000);
+  });
+
+  // 10-second download variant — visible only for photo + animation (no video).
+  // Video export uses the source video's length and ignores duration.
+  $('#download10')?.addEventListener('click', ()=>{
+    const btn = $('#download10');
+    if(btn.dataset.busy === '1') return;
+    runVideoExport(btn, document.getElementById('download10Label'), 10000);
   });
 
   // removed photoScale slider listener (scaling now on-canvas)
