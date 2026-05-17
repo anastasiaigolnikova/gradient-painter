@@ -986,8 +986,18 @@
       saveState(); // Save state before loading SVG
       svgLoaded = true;
       $('#grain').checked = true;
-      
+
       drawSVGGroups(pathGroups);
+
+      // SVG produces renderable canvas content. Expose the animation panel
+      // and hide the empty-canvas hint. PHOTO STYLE / SIZE / STRENGTH stay
+      // visible but are inert for SVG-only mode (no selected photo to apply
+      // them to). syncAnimControlsForPattern handles SVG-only disable rules.
+      const section = document.getElementById('photomakerSection');
+      if(section) section.classList.remove('hidden');
+      if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
+      updateExportButton();
+      updateEmptyHint();
       
     } catch (error) {
       console.error('Ошибка при загрузке SVG:', error);
@@ -1536,25 +1546,34 @@
     if(pw <= 0 || ph <= 0) return;
     photoCtx.clearRect(0,0,pw,ph);
 
-    if(photos.length===0) return;
-
-    // Вписать фото в offscreen (letterbox fit)
-    // Per-photo filters
-
-    offscreen.width = pw; offscreen.height = ph;
-    animCanvas.width = pw; animCanvas.height = ph;
-
-    // Draw all photos in order
-    // Use synthetic time during recording for smooth video, real time otherwise
-    // Animation clock: synthetic time during legacy 5s record, video.currentTime
-    // during full-video export (keeps Liquid/Smoke smooth regardless of render cost),
-    // wall-clock otherwise.
+    // Animation clock — synthetic during recording, wall-clock otherwise
     const tSec = isRecording
       ? syntheticTime
       : (_recordingActive && _recordingVideoTime != null)
         ? _recordingVideoTime
         : (performance.now()-animStart)/1000;
     const t = tSec * Math.max(0.2,animSpeed);
+
+    // SVG-only animation path: no photo loaded, but SVG art is rendered into
+    // the gl gradient canvas. Pipe the gl composite through the animation
+    // effect so the SVG art moves with the chosen mode. Filter modes that
+    // need per-element metadata (shuffle, reveal) are disabled in the UI here.
+    if(photos.length === 0){
+      if(svgLoaded && filtersAnimated){
+        offscreen.width = pw; offscreen.height = ph;
+        animCanvas.width = pw; animCanvas.height = ph;
+        animCtx.clearRect(0, 0, pw, ph);
+        animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+      }
+      return;
+    }
+
+    // Вписать фото в offscreen (letterbox fit)
+    // Per-photo filters
+
+    offscreen.width = pw; offscreen.height = ph;
+    animCanvas.width = pw; animCanvas.height = ph;
 
     photos.forEach(p=>{
       const src = getPhotoSource(p);
@@ -1627,8 +1646,10 @@
     
     if(!animContainer || !modeSel) return;
     
-    // Show animation controls whenever a photo is selected, regardless of filter
-    if(p){
+    // Show animation controls whenever there's renderable content on canvas:
+    // a selected photo / video, OR SVG art rendered into the gl gradient layer.
+    const hasContent = !!p || svgLoaded;
+    if(hasContent){
       animContainer.style.display = 'block';
       modeSel.disabled = false;
       modeSel.style.opacity = '';
@@ -1638,14 +1659,16 @@
       //  - Shuffle:      disabled only when there is no filter at all
       //  - Build/Reveal: disabled only when there is no filter at all
       //  - AI Scan:      disabled for photos (motion detection requires video)
-      // Everything else is always enabled.
-      const pat = p.pattern || 'none';
+      // For SVG-only content there's no per-photo filter pipeline, so Shuffle /
+      // Reveal / AI Scan are disabled — pixel-level modes still work fine.
+      const pat = p ? (p.pattern || 'none') : 'none';
       const noFilter = pat === 'none';
-      const isVid = !!p.isVideo;
+      const isVid = !!(p && p.isVideo);
+      const svgOnly = !p && svgLoaded;
       const opts = modeSel.querySelectorAll('option');
       opts.forEach(opt => {
-        if(opt.value === 'shuffle')      opt.disabled = noFilter;
-        else if(opt.value === 'reveal')  opt.disabled = noFilter;
+        if(opt.value === 'shuffle')      opt.disabled = noFilter || svgOnly;
+        else if(opt.value === 'reveal')  opt.disabled = noFilter || svgOnly;
         else if(opt.value === 'aiscan')  opt.disabled = !isVid;
         else                              opt.disabled = false;
       });
@@ -1661,7 +1684,7 @@
       }
       if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
     } else {
-      // No photo: hide controls and disable any running animation
+      // No content at all: hide controls and disable any running animation
       animContainer.style.display = 'none';
       if(filtersAnimated){
         filtersAnimated = false;
@@ -3786,6 +3809,7 @@
     // The legacy #exportVideo button is hidden — runVideoExport() is
     // reached via #download.
     const hasVideo = photos.some(p => p.isVideo);
+    const hasContent = photos.length > 0 || svgLoaded;
     const dlBtn = document.getElementById('download');
     const dlLbl = document.getElementById('downloadLabel');
     const dl10  = document.getElementById('download10');
@@ -3799,8 +3823,8 @@
       }
     }
     if(dl10){
-      // 10s option: shown when any motion content is present (animated photo
-      // OR video). Same 5s/10s pair in both cases.
+      // 10s option: shown when any motion content is present (animated photo,
+      // animated SVG art, OR video). Same 5s/10s pair in all cases.
       const showTen = filtersAnimated || hasVideo;
       const d10Lbl = document.getElementById('download10Label');
       if(d10Lbl){
@@ -3811,7 +3835,7 @@
     // Manual live recording is available whenever something is on canvas
     const mRec = document.getElementById('manualRec');
     if(mRec){
-      mRec.style.display = photos.length > 0 ? 'block' : 'none';
+      mRec.style.display = hasContent ? 'block' : 'none';
     }
     const btn = document.getElementById('exportVideo');
     if(btn){
@@ -3822,7 +3846,10 @@
   function updateEmptyHint(){
     const hint = document.getElementById('emptyHint');
     if(!hint) return;
-    hint.classList.toggle('hidden', photos.length > 0);
+    // Hide the "upload a photo or video to begin" placeholder once ANY
+    // content is on the canvas — including SVG art (which doesn't enter the
+    // photos array but is rendered onto the gl canvas).
+    hint.classList.toggle('hidden', photos.length > 0 || svgLoaded);
   }
   updateEmptyHint();
   $('#animSpeed')?.addEventListener('input', (e)=>{ animSpeed = parseFloat(e.target.value||'1')||1; });
@@ -4462,9 +4489,9 @@
       }
       return exportFullVideo(videoPhoto, btn, durationMs);
     }
-    // Mode B: 5-second synthetic-time animation recording for a photo
-    if(!filtersAnimated || photos.length===0){
-      alert('Включите анимацию и загрузите фото');
+    // Mode B: N-second synthetic-time animation recording for a photo / SVG art
+    if(!filtersAnimated || (photos.length === 0 && !svgLoaded)){
+      alert('Включите анимацию и загрузите фото / SVG');
       return;
     }
 
@@ -4637,8 +4664,8 @@
   function manualRecStart(){
     if(_manualRec) return;
     const pw = photoLayer.width, ph = photoLayer.height;
-    if(!pw || !ph || photos.length === 0){
-      alert('Сначала загрузите фото или видео');
+    if(!pw || !ph || (photos.length === 0 && !svgLoaded)){
+      alert('Сначала загрузите фото / видео / SVG');
       return;
     }
 
