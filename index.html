@@ -1882,13 +1882,15 @@
 
   // Pixelate: turn image into mosaic of large square pixels; size pulses with time
   function effectPixelate(destCtx, sourceCanvas, w, h, t, tSec){
-    // Base mosaic pixel size driven by SIZE slider (user expectation), gentle
-    // time pulse on top. AMPLITUDE only modulates the pulse depth.
+    // Base mosaic pixel size driven by SIZE slider. AMPLITUDE controls breathing
+    // depth: at amp=0 cells stay constant, at amp=1 they shrink to ~30% of base
+    // size on each cycle. Without enough depth the user sees no motion.
     const sel = getSelectedPhoto();
     const sizeSlider = sel ? (sel.size ?? 20) : 20;
-    const base = Math.max(3, sizeSlider * 1.0); // ~3..100 px from SIZE
-    const pulse = 0.85 + Math.sin(t * 0.6) * 0.15 * animAmp; // small breathing
-    const pix = Math.max(2, Math.floor(base * pulse));
+    const base = Math.max(3, sizeSlider * 1.0);
+    const breathT = (Math.sin(t * 1.5) + 1) * 0.5; // 0..1, cycles ~4s at SPEED=1
+    const mult = 1 - animAmp * 0.7 * breathT;       // 1..(1-0.7·amp)
+    const pix = Math.max(2, Math.floor(base * mult));
     const ow = Math.max(1, Math.floor(w / pix));
     const oh = Math.max(1, Math.floor(h / pix));
     if(!window._pixTmp) window._pixTmp = document.createElement('canvas');
