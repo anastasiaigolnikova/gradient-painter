@@ -300,9 +300,10 @@
 
     </div>
 
+    <div class="section-sub" id="exportHeading" style="display:none;margin:18px 0 6px">EXPORT</div>
     <button id="download" class="btn-download"><span id="downloadLabel">DOWNLOAD PNG</span></button>
     <button id="download10" class="btn-download" style="display:none;margin-top:8px"><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
-    <button id="manualRec" class="btn-download" style="display:none;margin-top:8px"><span id="manualRecLabel">● RECORD LIVE</span></button>
+    <button id="manualRec" class="btn-download" style="display:none;margin-top:8px"><span id="manualRecLabel">● RECORD LIVE (15S MAX)</span></button>
 
     <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
       <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
@@ -325,7 +326,7 @@
       </svg>
     </a>
   </div>
-  <div id="stage"><canvas id="gl"></canvas><div id="emptyHint">UPLOAD A PHOTO OR VIDEO TO BEGIN</div><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
+  <div id="stage"><canvas id="gl"></canvas><div id="emptyHint">UPLOAD A PHOTO, VIDEO, OR SVG TO BEGIN</div><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
 </div>
 
 <script>
@@ -1749,11 +1750,21 @@
       const isVid = !!(p && p.isVideo);
       const svgOnly = !p && svgLoaded;
       const opts = modeSel.querySelectorAll('option');
+      // Append explanation suffix to disabled options so the dropdown
+      // explains itself — "Shuffle (needs filter)" reads as "this is greyed
+      // out for a reason, here's why" instead of "feature broken".
       opts.forEach(opt => {
-        if(opt.value === 'shuffle')      opt.disabled = noFilter || svgOnly;
-        else if(opt.value === 'reveal')  opt.disabled = noFilter || svgOnly;
-        else if(opt.value === 'aiscan')  opt.disabled = !isVid;
-        else                              opt.disabled = false;
+        // Capture each option's clean base label once
+        if(!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
+        const base = opt.dataset.baseLabel;
+        let disabled = false, suffix = '';
+        if(opt.value === 'shuffle' || opt.value === 'reveal'){
+          if(noFilter || svgOnly){ disabled = true; suffix = ' (needs a filter)'; }
+        } else if(opt.value === 'aiscan'){
+          if(!isVid){ disabled = true; suffix = ' (video only)'; }
+        }
+        opt.disabled = disabled;
+        opt.textContent = base + suffix;
       });
       // If the currently selected mode just became disabled, fall back to 'off'
       const cur = modeSel.options[modeSel.selectedIndex];
@@ -3885,7 +3896,20 @@
     e.target.value = '';
   });
 
-  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; saveState(); p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
+  $('#patternSelect')?.addEventListener('change', ()=>{
+    const p=getSelectedPhoto();
+    if(!p) return;
+    saveState();
+    // Auto-dismiss the position / resize handles when the user moves on to
+    // filter work — otherwise the drag rectangle overlaps the preview and
+    // people think filters aren't applying.
+    showPhotoSelection = false; isDraggingPhoto = false; isResizingPhoto = false;
+    const photoUi = document.getElementById('photoUi'); if(photoUi) photoUi.style.display = 'none';
+    p.pattern = $('#patternSelect').value;
+    syncAnimControlsForPattern();
+    renderPhotomaker();
+    ensureTickFilters();
+  });
   // Sliders: 'input' fires continuously while dragging (live preview). For
   // Undo we want ONE history entry per drag, capturing the PRE-drag value.
   // Trick: snapshot on the first 'input' of a drag, before the new value is
@@ -3938,7 +3962,13 @@
     const mRec = document.getElementById('manualRec');
     if(mRec){
       mRec.style.display = hasContent ? 'block' : 'none';
+      if(mRec.dataset.busy !== '1'){
+        const mLbl = document.getElementById('manualRecLabel');
+        if(mLbl && mLbl.textContent.startsWith('●')) mLbl.textContent = '● RECORD LIVE (15S MAX)';
+      }
     }
+    const expH = document.getElementById('exportHeading');
+    if(expH) expH.style.display = hasContent ? 'block' : 'none';
     const btn = document.getElementById('exportVideo');
     if(btn){
       btn.style.display = 'none';
