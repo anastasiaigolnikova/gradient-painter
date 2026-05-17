@@ -552,33 +552,40 @@
   let historyStack = [];
   const MAX_HISTORY = 50; // Maximum number of undo steps
   
-  // Save current state to history
-  function saveState() {
-    // Read current texture data from fboA
-    const pixels = new Float32Array(W * H * 4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, pixels);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    
-    // Save photo layer state
+  // Save current state to history.
+  //
+  // Heavy fields (FBO pixels = ~33MB at 1080p, photoData ImageData = ~8MB at
+  // 1080p) are only captured when the action MIGHT have changed them — brush
+  // strokes mutate the FBO and photoLayer pixels, but slider tweaks / filter
+  // dropdowns / photo uploads do not. For "light" snapshots we just record
+  // photo array + global filter/anim params, keeping each entry under ~1KB.
+  // Without this, MAX_HISTORY × 40MB = 2GB and the tab crashes.
+  function saveState(opts) {
+    opts = opts || {};
+    const heavy = !!opts.heavy;
+
+    let pixels = null;
+    if (heavy) {
+      pixels = new Float32Array(W * H * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, pixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
     let photoData = null;
     let photoImage = null;
     if (originalPhoto) {
-      photoImage = originalPhoto; // Store reference to ImageBitmap
-      // Also save rendered photo layer
-      if (photoLayer.width > 0 && photoLayer.height > 0) {
+      photoImage = originalPhoto;
+      if (heavy && photoLayer.width > 0 && photoLayer.height > 0) {
         photoData = photoCtx.getImageData(0, 0, photoLayer.width, photoLayer.height);
       }
     }
-    
-    // Snapshot photos array (shallow clone — keeps ImageBitmap / video refs alive)
-    // plus all per-photo and global filter / animation settings, so undo can
-    // walk back through uploads and filter / animation changes too — not just
-    // brush strokes.
+
     const photosSnapshot = photos.map(p => Object.assign({}, p));
 
     historyStack.push({
-      pixels: pixels,
+      heavy,
+      pixels,
       width: W,
       height: H,
       svgLoaded: svgLoaded,
@@ -594,10 +601,24 @@
       animFreq,
       filtersAnimated
     });
-    
-    // Limit history size
+
+    // Enforce both count cap AND total byte budget (drop oldest heavy entries
+    // first so brush-stroke history thins out before light state churn does).
     if (historyStack.length > MAX_HISTORY) {
       historyStack.shift();
+    }
+    const MAX_BYTES = 200 * 1024 * 1024; // 200 MB ceiling for heavy snapshots
+    let bytes = 0;
+    for (let i = historyStack.length - 1; i >= 0; i--) {
+      const s = historyStack[i];
+      if (s.pixels) bytes += s.pixels.byteLength;
+      if (s.photoData) bytes += s.photoData.data.byteLength;
+      if (bytes > MAX_BYTES) {
+        // Convert the older entries to "light" by dropping their heavy data
+        s.pixels = null;
+        s.photoData = null;
+        s.heavy = false;
+      }
     }
   }
   
@@ -617,26 +638,28 @@
       return;
     }
     
-    // Restore texture data to fboA
-    gl.bindTexture(gl.TEXTURE_2D, texA);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.FLOAT, prevState.pixels);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    
+    // Restore brush-stroke FBO only if we have heavy pixels stored.
+    // Light snapshots (slider / dropdown changes) didn't mutate the FBO so
+    // leaving it as-is is correct.
+    if (prevState.pixels) {
+      gl.bindTexture(gl.TEXTURE_2D, texA);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.FLOAT, prevState.pixels);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
     // Restore photo layer
     if (prevState.photoImage) {
       originalPhoto = prevState.photoImage;
       if (prevState.photoData && prevState.photoLayerW === photoLayer.width && prevState.photoLayerH === photoLayer.height) {
         photoCtx.putImageData(prevState.photoData, 0, 0);
       } else {
-        // Re-render if sizes don't match
+        // Re-render from current photo state (light snapshot or size mismatch)
         renderPhotomaker();
       }
-      // Show photo settings section
       $('#photomakerSection').classList.remove('hidden');
     } else {
       originalPhoto = null;
       photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
-      // Hide photo settings section when no photo
       $('#photomakerSection').classList.add('hidden');
     }
 
@@ -718,10 +741,10 @@
       // Если режим трансформации включен — игнорируем рисование, пока не нажали APPLY
       if(showPhotoSelection) return;
     }
-    drawing=true; 
-    last=mouse(e); 
+    drawing=true;
+    last=mouse(e);
     strokeId++;
-    saveState(); // Save state before drawing
+    saveState({heavy: true}); // brush stroke mutates the FBO → heavy snapshot
     draw();
   });
   
@@ -769,8 +792,9 @@
     // RESET — return everything (filters, animation, brush strokes, SVG art,
     // photo position) to the freshly-loaded state, but KEEP the uploaded
     // photo / video on the canvas. To drop the photo too, use Delete.
-    // Snapshot first so Ctrl+Z can undo the reset.
-    saveState();
+    // Snapshot first so Ctrl+Z can undo the reset. Heavy because initState()
+    // wipes the FBO brush strokes — those pixels need to be restorable.
+    saveState({heavy: true});
 
     svgLoaded = false;
     initState();
@@ -901,10 +925,18 @@
   attachHexSync('hexBot','cBot');
   
   // Color pickers handlers
-  $('#cTop').oninput = ()=> draw();
-  $('#cMid').oninput = ()=> draw();
-  $('#cBot').oninput = ()=> draw();
-  $('#midPos').oninput = ()=> draw();
+  // Save pre-drag snapshot on first input of a colour / mid-position change.
+  // snapOnFirstInput is declared later (after the slider block) but hoisting
+  // through function declarations doesn't apply to const — so we lazily look
+  // it up off the closure once the slider block has run. Simpler: wrap.
+  function _snapColour(id){ if(typeof snapOnFirstInput === 'function') snapOnFirstInput(id); }
+  function _endColour(id){ if(typeof endSliderDrag === 'function') endSliderDrag(id); }
+  ['cTop','cMid','cBot','midPos'].forEach(id => {
+    const el = $('#'+id);
+    if(!el) return;
+    el.addEventListener('input', ()=> { _snapColour(id); draw(); });
+    el.addEventListener('change', ()=> _endColour(id));
+  });
 
   // ===== Slider numeric readouts =====
   // Each slider gets a small live numeric label next to its name so the user
@@ -945,7 +977,9 @@
   // Helper: drop all loaded photos / videos from the canvas (used by Delete key)
   function clearAllPhotos(){
     if(photos.length === 0) return;
-    saveState();
+    // Heavy: photoLayer rendered pixels are about to be cleared; preserve
+    // them so Ctrl+Z can bring the photo (with its filtered look) back.
+    saveState({heavy: true});
     photos.forEach(disposePhoto);
     photos.length = 0;
     selectedIndex = -1;
@@ -1031,7 +1065,7 @@
 
       pathGroups.sort((a, b) => a.points.length - b.points.length);
 
-      saveState(); // Save state before loading SVG
+      saveState({heavy: true}); // SVG drawing into FBO → heavy snapshot
       svgLoaded = true;
       $('#grain').checked = true;
 
@@ -1761,6 +1795,14 @@
     _tickScheduled = false;
     if(!filtersAnimated) return;
     if(typeof hasAnyVideo === 'function' && hasAnyVideo()) return; // video loop owns rendering
+    // Yield to any in-progress export — the recording renderLoop or the
+    // record-canvas-swapped video export drives renderPhotomaker itself.
+    // Without this, two RAF loops fight over the same canvas → torn frames.
+    if(_recordingActive || isRecording){
+      _tickScheduled = true;
+      requestAnimationFrame(tickFilters);
+      return;
+    }
     renderPhotomaker();
     if(!_tickScheduled){
       _tickScheduled = true;
@@ -3743,7 +3785,7 @@
   imgInput?.addEventListener('change', async (e)=>{
     const f = e.target.files?.[0];
     if(!f) return;
-    saveState(); // Save state before loading photo
+    saveState(); // light snapshot — photo entry will be added in this turn
     const bmp = await createImageBitmap(f);
     // push into photos (max 12)
     if(photos.length >= 12) disposePhoto(photos.shift());
@@ -3844,9 +3886,20 @@
   });
 
   $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; saveState(); p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
-  $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
-  $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
-  $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.invert = $('#invertPattern').checked; renderPhotomaker(); });
+  // Sliders: 'input' fires continuously while dragging (live preview). For
+  // Undo we want ONE history entry per drag, capturing the PRE-drag value.
+  // Trick: snapshot on the first 'input' of a drag, before the new value is
+  // copied into p.*. 'change' (mouse-up) resets the per-slider flag so the
+  // next drag opens a fresh history entry.
+  const _sliderDrag = {};
+  function snapOnFirstInput(id){ if(!_sliderDrag[id]){ _sliderDrag[id] = true; saveState(); } }
+  function endSliderDrag(id){ _sliderDrag[id] = false; }
+
+  $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; snapOnFirstInput('patternSize'); p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
+  $('#patternSize')?.addEventListener('change', ()=> endSliderDrag('patternSize'));
+  $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; snapOnFirstInput('detailLevel'); p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
+  $('#detailLevel')?.addEventListener('change', ()=> endSliderDrag('detailLevel'));
+  $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; saveState(); p.invert = $('#invertPattern').checked; renderPhotomaker(); });
   // Decide what the EXPORT button should do right now:
   //  - If there's a video in photos → "DOWNLOAD VIDEO" (full-length capture)
   //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
@@ -3901,7 +3954,8 @@
     hint.classList.toggle('hidden', photos.length > 0 || svgLoaded);
   }
   updateEmptyHint();
-  $('#animSpeed')?.addEventListener('input', (e)=>{ animSpeed = parseFloat(e.target.value||'1')||1; });
+  $('#animSpeed')?.addEventListener('input', (e)=>{ snapOnFirstInput('animSpeed'); animSpeed = parseFloat(e.target.value||'1')||1; });
+  $('#animSpeed')?.addEventListener('change', ()=> endSliderDrag('animSpeed'));
 
   // Which sliders does each animation mode actually use?
   //  speed = does the cycle/wave go faster?
@@ -3958,8 +4012,10 @@
   });
   // Initial state — animMode starts as 'off' so SPEED/AMP/FREQ should be greyed
   updateAnimSlidersState();
-  $('#animAmp')?.addEventListener('input', (e)=>{ animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) ensureTickFilters(); });
-  $('#animFreq')?.addEventListener('input', (e)=>{ animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) ensureTickFilters(); });
+  $('#animAmp')?.addEventListener('input', (e)=>{ snapOnFirstInput('animAmp'); animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) ensureTickFilters(); });
+  $('#animAmp')?.addEventListener('change', ()=> endSliderDrag('animAmp'));
+  $('#animFreq')?.addEventListener('input', (e)=>{ snapOnFirstInput('animFreq'); animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) ensureTickFilters(); });
+  $('#animFreq')?.addEventListener('change', ()=> endSliderDrag('animFreq'));
   
   // Video export
   let videoRecorder = null;
@@ -4258,6 +4314,11 @@
       console.error('WebCodecs export error:', err);
       alert('Ошибка записи: ' + (err && err.message ? err.message : err));
     } finally {
+      // Always close the encoder — on the error path we skipped the explicit
+      // close above, which would otherwise leak its GPU resources and pin
+      // the muxer's growing ArrayBufferTarget alive. State guard avoids
+      // re-closing if the success path already closed it.
+      try { if(encoder && encoder.state !== 'closed') encoder.close(); } catch(_){}
       _recordingActive = false;
       _recordingVideoTime = null;
       photos.forEach((pp, i) => { if(typeof origPhotoSizes[i] === 'number') pp.size = origPhotoSizes[i]; });
