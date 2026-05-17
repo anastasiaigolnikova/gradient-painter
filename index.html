@@ -1985,13 +1985,25 @@
   }
 
   // Liquid: smooth perlin-like displacement (2 octaves)
+  // Scratch buffers reused across frames — at 1080p each is 8 MB, allocating
+  // them every frame thrashed GC and stuttered the preview.
+  const _pxScratch = { src: null, out: null, img: null, w: 0, h: 0 };
+  function _pxBuffers(w, h){
+    const len = w * h * 4;
+    if(_pxScratch.w !== w || _pxScratch.h !== h || !_pxScratch.out || _pxScratch.out.length !== len){
+      _pxScratch.out = new Uint8ClampedArray(len);
+      _pxScratch.img = new ImageData(_pxScratch.out, w, h);
+      _pxScratch.w = w; _pxScratch.h = h;
+    }
+    return _pxScratch;
+  }
   function effectLiquid(destCtx, w, h, t, tSec){
     const imgData = animCtx.getImageData(0, 0, w, h);
     const src = imgData.data;
-    const out = new Uint8ClampedArray(src.length);
+    const buf = _pxBuffers(w, h);
+    const out = buf.out;
     const scale = 0.006 * animFreq;
     const amp = animAmp * 50;
-    // 2× base rate so SPEED=1 already feels alive
     const tL = t * 2;
     for(let y=0; y<h; y++){
       for(let x=0; x<w; x++){
@@ -2007,15 +2019,15 @@
         out[di+3] = src[si+3];
       }
     }
-    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+    destCtx.putImageData(buf.img, 0, 0);
   }
 
   // Smoke: multi-octave noise displacement with larger amplitude / slower drift
   function effectSmoke(destCtx, w, h, t, tSec){
     const imgData = animCtx.getImageData(0, 0, w, h);
     const src = imgData.data;
-    const out = new Uint8ClampedArray(src.length);
-    // 2.5× base rate so smoke actually drifts at SPEED=1
+    const buf = _pxBuffers(w, h);
+    const out = buf.out;
     const t1 = tSec * 1.0 * Math.max(0.2, animSpeed);
     const t2 = tSec * 2.2 * Math.max(0.2, animSpeed);
     const amp = animAmp * 90;
@@ -2034,7 +2046,7 @@
         out[di+3] = src[si+3];
       }
     }
-    destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+    destCtx.putImageData(buf.img, 0, 0);
   }
 
   // Glitch: horizontal strip displacement + RGB shear, triggered in bursts
@@ -2088,7 +2100,8 @@
       // (a) per-channel shift — preserves the original photo colours
       const imgData = animCtx.getImageData(0, 0, w, h);
       const src = imgData.data;
-      const out = new Uint8ClampedArray(src.length);
+      const buf = _pxBuffers(w, h);
+      const out = buf.out;
       const s = shift | 0;
       for(let y=0; y<h; y++){
         for(let x=0; x<w; x++){
@@ -2101,7 +2114,7 @@
           out[di+3] = src[di + 3];
         }
       }
-      destCtx.putImageData(new ImageData(out, w, h), 0, 0);
+      destCtx.putImageData(buf.img, 0, 0);
       return;
     }
 
