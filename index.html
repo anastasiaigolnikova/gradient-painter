@@ -1949,9 +1949,10 @@
 
   // Pixel HD: image revealed through a grid of square cells that flicker in/out, with thin frames
   function effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec){
-    // Transparent base — filter content (often black-on-transparent) needs the
-    // gradient underneath to show through. A black fillRect would hide every
-    // filter that uses black ink (Lines, Halftone, Signs, etc.).
+    // Active cells show filter content over the gradient. Inactive cells get
+    // a solid BLACK fill — the visual signature of the effect. Without that
+    // fill the effect just looks like a sparse mosaic with gradient bleeding
+    // through, which is what regressed when this was changed to transparent.
     destCtx.clearRect(0, 0, w, h);
     // Block size driven by SIZE slider; FREQUENCY now only modulates flicker rate
     const sel = getSelectedPhoto();
@@ -1972,6 +1973,9 @@
         const bw = Math.min(blockSize, w - x), bh = Math.min(blockSize, h - y);
         if(active){
           destCtx.drawImage(sourceCanvas, x, y, bw, bh, x, y, bw, bh);
+        } else {
+          destCtx.fillStyle = '#000';
+          destCtx.fillRect(x, y, bw, bh);
         }
         if(seededRandom(id * 0.31) > 0.45){
           destCtx.strokeStyle = active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.16)';
