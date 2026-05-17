@@ -28,6 +28,7 @@
       text-transform:uppercase;
     }
     .section-title{font-size:13px;line-height:1;text-align:left;letter-spacing:.16em;font-weight:600;color:#fff;margin:0 0 16px;opacity:.9}
+    .section-sub{font-size:10px;line-height:1;letter-spacing:.18em;font-weight:600;color:#fff;opacity:.8;margin:0 0 10px}
 
     .color-row{display:flex;gap:14px;margin-bottom:6px}
     #ui input[type="color"]{appearance:none;border:0;background:none;width:56px;height:20px;padding:0;border-radius:3px;cursor:pointer}
@@ -46,6 +47,10 @@
     #ui input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#fff;border-radius:50%;border:0;margin-top:-5px;cursor:grab}
     #ui input[type="range"]::-webkit-slider-thumb:active{cursor:grabbing}
     #ui input[type="range"]::-moz-range-thumb{width:12px;height:12px;background:#fff;border:none;border-radius:50%}
+    #ui input[type="range"]:disabled,
+    #ui input[type="range"][disabled]{opacity:.3;pointer-events:none}
+    .lab.disabled,
+    .range.disabled{opacity:.35}
 
     .btn-row{display:flex;gap:6px;margin:6px 0}
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:var(--h);padding:0 6px;border:1px solid var(--b);background:transparent;color:var(--t);cursor:pointer;font:9px/1.15 'Archivo',system-ui;text-transform:uppercase;letter-spacing:.05em;border-radius:2px;transition:background .12s,border-color .12s;box-sizing:border-box;min-width:0;text-align:center;white-space:normal}
@@ -138,6 +143,12 @@
       pointer-events:none;
       z-index:1;
     }
+    #emptyHint{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      color:rgba(255,255,255,0.42);font:11px/1 'Archivo',system-ui;
+      letter-spacing:.22em;text-transform:uppercase;pointer-events:none;z-index:1;
+    }
+    #emptyHint.hidden{display:none}
     #photoUi{position:absolute;top:12px;left:12px;z-index:2;display:none}
     #photoUi .btn-apply{height:32px;padding:0 12px;border:1px solid #D9D9D9;background:#111;color:#D9D9D9;cursor:pointer;font:12px/32px 'Archivo',system-ui;text-transform:uppercase}
     #photoUi .btn-apply:hover{background:#222}
@@ -163,6 +174,7 @@
       <input id="cBot" type="color" value="#000000"/>
     </div>
 
+    <label class="lab">MID POSITION</label>
     <label class="range">
       <input id="midPos" type="range" min="0" max="1" step="0.001" value="0.5"/>
     </label>
@@ -237,7 +249,7 @@
       </select>
 
       <label class="lab">SIZE</label>
-      <label class="range"><input id="patternSize" type="range" min="5" max="50" value="20"/></label>
+      <label class="range"><input id="patternSize" type="range" min="3" max="100" value="20"/></label>
 
       <label class="lab">STRENGTH</label>
       <label class="range"><input id="detailLevel" type="range" min="10" max="90" value="50"/></label>
@@ -247,8 +259,9 @@
         <label>INVERT</label>
       </div>
 
-      <div id="animationControls" style="display:none">
-        <label class="lab">ANIMATION MODE</label>
+      <div id="animationControls" style="display:none;border-top:1px solid var(--b);margin-top:14px;padding-top:14px">
+        <div class="section-sub">ANIMATION</div>
+        <label class="lab">MODE</label>
         <select id="animMode" style="margin:4px 0 6px">
           <option value="off">— Off (static) —</option>
           <option value="flow">Flow</option>
@@ -260,9 +273,11 @@
           <option value="particle">Particle Dissolve</option>
           <option value="pixelhd">Pixel HD</option>
           <option value="aiscan">AI Scan</option>
+          <option value="shuffle">Shuffle</option>
+          <option value="reveal">Build / Reveal</option>
         </select>
         <label class="lab">SPEED</label>
-        <label class="range"><input id="animSpeed" type="range" min="0.2" max="3" step="0.1" value="1"/></label>
+        <label class="range"><input id="animSpeed" type="range" min="0.2" max="5" step="0.1" value="1"/></label>
         <label class="lab">AMPLITUDE</label>
         <label class="range"><input id="animAmp" type="range" min="0" max="1" step="0.01" value="0.30"/></label>
         <label class="lab">FREQUENCY</label>
@@ -279,7 +294,7 @@
 
     </div>
 
-    <button id="download" class="btn-download">DOWNLOAD PNG</button>
+    <button id="download" class="btn-download"><span id="downloadLabel">DOWNLOAD PNG</span></button>
 
     <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
       <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
@@ -302,7 +317,7 @@
       </svg>
     </a>
   </div>
-  <div id="stage"><canvas id="gl"></canvas><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
+  <div id="stage"><canvas id="gl"></canvas><div id="emptyHint">UPLOAD A PHOTO OR VIDEO TO BEGIN</div><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
 </div>
 
 <script>
@@ -703,22 +718,30 @@
       // Hide photo settings section when photo is cleared
       $('#photomakerSection').classList.add('hidden');
       updateExportButton();
+      updateEmptyHint();
   };
   $('#download').onclick = ()=>{
-    // Create temp canvas with the actual display size
+    // If animation is active OR a video is loaded → user expects a moving file.
+    // Route to the unified video-export pipeline (uses the same button for
+    // busy state / progress label).
+    const btn = $('#download');
+    if(btn.dataset.busy === '1') return;
+    const hasVideo = typeof photos !== 'undefined' && photos.some(p => p.isVideo);
+    if(filtersAnimated || hasVideo){
+      const lbl = document.getElementById('downloadLabel');
+      runVideoExport(btn, lbl);
+      return;
+    }
+
+    // Otherwise: classic static PNG snapshot.
     const tmp = document.createElement('canvas');
     tmp.width = canvas.width;
     tmp.height = canvas.height;
     const tmpCtx = tmp.getContext('2d');
-    
-    // Draw WebGL layer (full resolution)
     tmpCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, tmp.width, tmp.height);
-    
-    // Draw photo layer on top if exists (must match same dimensions)
     if(photoLayer && photoLayer.width && photoLayer.height){
       tmpCtx.drawImage(photoLayer, 0, 0, photoLayer.width, photoLayer.height, 0, 0, tmp.width, tmp.height);
     }
-    
     tmp.toBlob((blob)=>{
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1495,6 +1518,33 @@
       modeSel.disabled = false;
       modeSel.style.opacity = '';
       modeSel.style.pointerEvents = '';
+
+      // Disabled-option rules (see ARCHITECTURE.md for the canonical matrix):
+      //  - Shuffle:      disabled only when there is no filter at all
+      //  - Build/Reveal: disabled only when there is no filter at all
+      //  - AI Scan:      disabled for photos (motion detection requires video)
+      // Everything else is always enabled.
+      const pat = p.pattern || 'none';
+      const noFilter = pat === 'none';
+      const isVid = !!p.isVideo;
+      const opts = modeSel.querySelectorAll('option');
+      opts.forEach(opt => {
+        if(opt.value === 'shuffle')      opt.disabled = noFilter;
+        else if(opt.value === 'reveal')  opt.disabled = noFilter;
+        else if(opt.value === 'aiscan')  opt.disabled = !isVid;
+        else                              opt.disabled = false;
+      });
+      // If the currently selected mode just became disabled, fall back to 'off'
+      const cur = modeSel.options[modeSel.selectedIndex];
+      if(cur && cur.disabled){
+        modeSel.value = 'off';
+        animMode = 'off';
+        if(filtersAnimated){
+          filtersAnimated = false;
+          updateExportButton();
+        }
+      }
+      if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
     } else {
       // No photo: hide controls and disable any running animation
       animContainer.style.display = 'none';
@@ -1535,6 +1585,14 @@
   function applyAnimationEffect(destCtx, sourceCanvas, w, h, t, tSec){
     const pattern = getSelectedPhoto()?.pattern || 'none';
 
+    // Shuffle: universal vector-element shuffling — each discrete element
+    // (dot, glyph, particle) swaps places with a stable partner via smooth
+    // sin-wave migration. Works on any filter that stores per-element
+    // metadata (dots, ascii, displace). Other filters: pass-through.
+    if(animMode === 'shuffle'){
+      applyShuffleAnimation(destCtx, sourceCanvas, w, h, t, tSec);
+      return;
+    }
     // ASCII (Signs): per-glyph animation — each character moves/replaces individually
     if(pattern === 'ascii'){
       applyASCIIAnimation(destCtx, sourceCanvas, w, h, t, tSec);
@@ -1544,7 +1602,7 @@
     // Modern universal effects — work on top of ANY filter (or plain photo)
     if(animMode === 'liquid' || animMode === 'smoke' || animMode === 'glitch' ||
        animMode === 'chromatic' || animMode === 'pixelate' || animMode === 'particle' ||
-       animMode === 'pixelhd' || animMode === 'aiscan'){
+       animMode === 'pixelhd' || animMode === 'aiscan' || animMode === 'reveal'){
       applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, animMode);
       return;
     }
@@ -1600,7 +1658,90 @@
     if(mode === 'particle')  return effectParticle(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'pixelhd')   return effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'aiscan')    return effectAIScan(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'reveal')    return effectReveal(destCtx, sourceCanvas, w, h, t, tSec);
     destCtx.drawImage(sourceCanvas, 0, 0);
+  }
+
+  // Build / Reveal: figure "assembles" from small/sparse filter elements
+  // into large/dense ones, then back. NOT a gradient mask — actually
+  // re-renders elements at scaled size and progressive count.
+  // - Signs: redraws ASCII glyphs with shrinking/growing font size +
+  //   per-glyph appearance order (some show first, all later).
+  // - Other filters: pixel downsample/upsample trick — coarse blocks
+  //   smoothly resolve into full detail.
+  // Build / Reveal: re-renders the active filter with the SIZE slider
+  // oscillating from ~30% of user's value up to user's value and back.
+  // Conceptually: "an invisible hand dragging the SIZE slider left and right".
+  // - At cycle bottom: filter elements are small/sparse
+  // - At cycle top: exactly the user's setting
+  // - Then back to small
+  function effectReveal(destCtx, sourceCanvas, w, h, t, tSec){
+    const sel = getSelectedPhoto();
+    const pattern = sel ? (sel.pattern || 'none') : 'none';
+
+    // No filter → nothing to oscillate. (Also: the UI disables Reveal in this case.)
+    if(pattern === 'none' || !sel){
+      destCtx.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+
+    // Build → hold full → unbuild → empty → repeat. 6s cycle at SPEED=1.
+    const cycleTime = 6.0 / Math.max(0.2, animSpeed);
+    const phase = (tSec % cycleTime) / cycleTime;
+    let buildPhase;
+    if(phase < 0.45)       buildPhase = phase / 0.45;
+    else if(phase < 0.55)  buildPhase = 1;
+    else if(phase < 1.0)   buildPhase = 1 - (phase - 0.55) / 0.45;
+    else                   buildPhase = 0;
+
+    // At buildPhase=1 we use exactly the user's settings (sourceCanvas already
+    // matches), so we can skip the expensive re-render.
+    if(buildPhase >= 0.99){
+      destCtx.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+
+    const origSize = typeof sel.size === 'number' ? sel.size : 20;
+    const detail   = typeof sel.detail === 'number' ? sel.detail : 50;
+    const invert   = !!sel.invert;
+
+    // Size oscillates from 30% → 100% of user's setting. Min floor 3 so the
+    // filter doesn't choke on values below its safe minimum.
+    const scaledSize = Math.max(3, origSize * (0.3 + buildPhase * 0.7));
+
+    // Need the raw (pre-filter) frame from offscreen. renderPhotomaker just
+    // populated it for this exact frame, so it's safe to read.
+    let srcImageData;
+    try { srcImageData = offctx.getImageData(0, 0, w, h); }
+    catch(_){ destCtx.drawImage(sourceCanvas, 0, 0); return; }
+
+    // Off-DOM scratch canvas, reused across frames to avoid allocation churn
+    if(!window._revealReRender) window._revealReRender = document.createElement('canvas');
+    const tmp = window._revealReRender;
+    if(tmp.width !== w) tmp.width = w;
+    if(tmp.height !== h) tmp.height = h;
+    const tctx = tmp.getContext('2d', { alpha: true, willReadFrequently: true });
+    tctx.clearRect(0, 0, w, h);
+
+    // Re-render the same filter with scaledSize. NOTE: this overwrites the
+    // filter's per-element metadata (dotsMetadata, asciiMetadata, etc.) with
+    // scaled-size values for this frame — fine, because Reveal doesn't share
+    // a frame with Shuffle.
+    switch(pattern){
+      case 'dots':       renderDots(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'displace':   renderDisplace(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'weave':      renderWeave(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'shapes':     renderShapes(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'ascii':      renderASCII(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'gradient':   renderGradient(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'dispersion': renderDispersion(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      default:
+        destCtx.drawImage(sourceCanvas, 0, 0);
+        return;
+    }
+
+    destCtx.clearRect(0, 0, w, h);
+    destCtx.drawImage(tmp, 0, 0);
   }
 
   // Liquid: smooth perlin-like displacement (2 octaves)
@@ -1659,10 +1800,10 @@
     destCtx.drawImage(sourceCanvas, 0, 0);
 
     // Slice glitches (random horizontal strips shift each frame)
-    const burst = Math.sin(tSec * 4) * 0.5 + 0.5; // 0..1 pulsing intensity
+    const burst = Math.sin(t * 4) * 0.5 + 0.5; // 0..1 pulsing intensity (speed-scaled)
     const stripCount = 12 + Math.floor(animFreq * 16);
     const maxShift = animAmp * 80;
-    const timeSeed = Math.floor(tSec * 8);
+    const timeSeed = Math.floor(t * 8); // speed-scaled
     for(let i=0; i<stripCount; i++){
       const trigger = seededRandom(timeSeed * 0.13 + i * 1.7);
       if(trigger > 0.6 - burst*0.3){
@@ -1675,7 +1816,7 @@
     }
 
     // RGB chromatic aberration overlay
-    const cShift = (Math.sin(tSec * 2.3) * animAmp * 10) | 0;
+    const cShift = (Math.sin(t * 2.3) * animAmp * 10) | 0; // speed-scaled
     if(cShift !== 0){
       destCtx.globalCompositeOperation = 'screen';
       destCtx.globalAlpha = 0.5;
@@ -1769,8 +1910,10 @@
 
   // Pixel HD: image revealed through a grid of square cells that flicker in/out, with thin frames
   function effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec){
-    destCtx.fillStyle = '#000';
-    destCtx.fillRect(0, 0, w, h);
+    // Transparent base — filter content (often black-on-transparent) needs the
+    // gradient underneath to show through. A black fillRect would hide every
+    // filter that uses black ink (Lines, Halftone, Signs, etc.).
+    destCtx.clearRect(0, 0, w, h);
     const blockSize = Math.max(16, Math.floor(70 - animFreq * 14));
     const cols = Math.ceil(w / blockSize);
     const rows = Math.ceil(h / blockSize);
@@ -1811,7 +1954,20 @@
   // Tracking is purely motion-driven — candidates come from frame-differencing blocks,
   // not brightness. Static frames produce no tracks (correct CV behaviour).
   function effectAIScan(destCtx, sourceCanvas, w, h, t, tSec){
-    const imgData = animCtx.getImageData(0, 0, w, h);
+    // Motion detection source: prefer the RAW pre-filter frame from offscreen
+    // when a filter is active. Filters like Signs render black-on-transparent,
+    // so animCanvas has almost no luminance variation between frames and
+    // motion threshold never trips. The raw video frame in offscreen always
+    // has rich luminance changes between frames.
+    const sel = getSelectedPhoto();
+    const pat = sel ? (sel.pattern || 'none') : 'none';
+    let imgData;
+    try {
+      imgData = (pat !== 'none' && offctx) ? offctx.getImageData(0, 0, w, h)
+                                            : animCtx.getImageData(0, 0, w, h);
+    } catch(_){
+      imgData = animCtx.getImageData(0, 0, w, h);
+    }
     const src = imgData.data;
 
     // --- Base layer: the live source (video or filtered image), shown as-is.
@@ -2053,8 +2209,8 @@
       destCtx.fillStyle = 'rgba(255, 255, 255, 1)';
       destCtx.fillRect(Math.floor(px) - 1, Math.floor(py) - 1, 3, 3);
 
-      // Dashed loose bounding box (slow pulse) — more visible
-      const bb = 26 + Math.floor(Math.sin(tSec * 1.4 + tr.id) * 6);
+      // Dashed loose bounding box (slow pulse) — more visible (speed-scaled)
+      const bb = 26 + Math.floor(Math.sin(t * 1.4 + tr.id) * 6);
       destCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
       destCtx.setLineDash([3, 4]);
       destCtx.strokeRect(px - bb, py - bb, bb * 2, bb * 2);
@@ -2081,7 +2237,13 @@
   }
 
   // Global storage for dots metadata (built once per render)
+  // Per-element metadata for animation overlays. Each render*() filter
+  // populates its array as it draws; applyShuffleAnimation reads them.
   let dotsMetadata = [];
+  let dispersionMetadata = [];
+  let shapesMetadata = [];
+  let gradientMetadata = [];
+  let weaveMetadata = [];
   // Global storage for Displace (3D) particles metadata
   let displaceMetadata = [];
   // Global storage for ASCII (Signs) glyph metadata — used to animate individual characters
@@ -2089,9 +2251,199 @@
   let asciiFontSize = 12;
 
   // ASCII (Signs) animation: redraws every glyph each frame with per-mode offset / replacement / fade
+  // Shuffle: universal "swap places" animation for any filter that has
+  // per-element metadata (dots, ascii glyphs, displace particles). Each
+  // element migrates along a smooth sin-wave between its own anchor and a
+  // stable random partner element's anchor — and back. Elements keep their
+  // original shape (no scaling, no deformation), only position changes.
+  // The figure stays readable because every element moves to ANOTHER element's
+  // position inside the same figure → silhouette is preserved.
+  function applyShuffleAnimation(destCtx, sourceCanvas, w, h, t, tSec){
+    const sel = getSelectedPhoto();
+    const pattern = sel ? (sel.pattern || 'none') : 'none';
+
+    // Choose which metadata array to drive the shuffle from. All graphic
+    // filters that store per-element data are supported: dots, displace,
+    // ascii (Signs), dispersion, shapes (Abstract), gradient.
+    let meta = null;
+    let mode = '';
+    if(pattern === 'ascii' && asciiMetadata && asciiMetadata.length > 0){
+      meta = asciiMetadata; mode = 'ascii';
+    } else if(pattern === 'dots' && dotsMetadata && dotsMetadata.length > 0){
+      meta = dotsMetadata; mode = 'dots';
+    } else if(pattern === 'displace' && displaceMetadata && displaceMetadata.length > 0){
+      meta = displaceMetadata; mode = 'displace';
+    } else if(pattern === 'dispersion' && dispersionMetadata && dispersionMetadata.length > 0){
+      meta = dispersionMetadata; mode = 'dispersion';
+    } else if(pattern === 'shapes' && shapesMetadata && shapesMetadata.length > 0){
+      meta = shapesMetadata; mode = 'shapes';
+    } else if(pattern === 'gradient' && gradientMetadata && gradientMetadata.length > 0){
+      meta = gradientMetadata; mode = 'gradient';
+    } else if(pattern === 'weave' && weaveMetadata && weaveMetadata.length > 0){
+      meta = weaveMetadata; mode = 'weave';
+    } else {
+      // Filter without per-element metadata (none) → pass through.
+      destCtx.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+
+    destCtx.clearRect(0, 0, w, h);
+    destCtx.fillStyle = '#000';
+    if(mode === 'ascii'){
+      destCtx.font = asciiFontSize + 'px monospace';
+      destCtx.textAlign = 'center';
+      destCtx.textBaseline = 'middle';
+    }
+
+    const speed   = Math.max(0.2, animSpeed);
+    const freqMul = Math.max(0.3, animFreq);
+    const total   = meta.length;
+    let drawnCount = 0; // safety: if loop produces no output, fall back to source
+
+    // SHUFFLE LOGIC (canonical, see ARCHITECTURE.md):
+    // - RECIPROCAL pairs: indices (0↔1), (2↔3), (4↔5), …
+    //   These are neighbours in the metadata array, which for grid-based
+    //   filters means neighbours in the grid → swap travels only one cell.
+    // - Both members of a pair share the same animation phase so they swap
+    //   synchronously. At t=0 each occupies its own slot; at t=1 they've
+    //   swapped slots. The grid stays filled at both extremes.
+    // - A perpendicular arc offset (sin Math.PI) makes the two members swing
+    //   around each other instead of overlapping in the midpoint.
+    // - Attributes (radius, char, shape, gray, h) lerp along the same migT,
+    //   so the dot that arrived in slot B looks like the dot that used to
+    //   be there (its size/char are now B's). Visually: a true swap dance.
+    const minDim = Math.min(w, h);
+
+    for(let i = 0; i < total; i++){
+      const p = meta[i];
+      // Reciprocal pair: even index pairs with the next, odd with previous
+      const pairIdx = (i % 2 === 0) ? Math.min(i + 1, total - 1) : (i - 1);
+      const partner = meta[pairIdx] || p;
+      const isLeader = (i % 2) === 0; // arc direction key: one over, one under
+
+      // Phase keyed by PAIR (not individual i) — both members share it
+      const pairSeed = Math.floor(i / 2) * 0.137;
+      const migPhase = tSec * 0.7 * speed * freqMul + seededRandom(pairSeed + 300) * Math.PI * 2;
+      const migT = Math.sin(migPhase) * 0.5 + 0.5; // 0..1 oscillation
+
+      // Position swap: each member travels along the line between anchors
+      const dx = partner.x - p.x;
+      const dy = partner.y - p.y;
+      const segLen = Math.sqrt(dx*dx + dy*dy);
+      // Perpendicular unit vector for the arc (90° CCW)
+      let perpX = 0, perpY = 0;
+      if(segLen > 0.5){ perpX = -dy / segLen; perpY = dx / segLen; }
+      // Arc magnitude: 0 at endpoints, peak at midpoint, scaled by AMPLITUDE
+      const arcMag = Math.sin(migT * Math.PI) * segLen * 0.35 * (0.4 + animAmp * 0.6);
+      const arcX = (isLeader ? +perpX : -perpX) * arcMag;
+      const arcY = (isLeader ? +perpY : -perpY) * arcMag;
+
+      const x = p.x + dx * migT + arcX;
+      const y = p.y + dy * migT + arcY;
+
+      // ownPulse stays for backwards compat with rendering blocks below, but
+      // for true swap visuals we keep it minimal (size doesn't need to throb
+      // — the visible motion is the position swap itself).
+      const ownPulse = 1;
+
+      if(mode === 'ascii'){
+        // Glyph swap at half-cycle — character changes, position fixed
+        const char = migT > 0.5 ? (partner.char || p.char) : p.char;
+        destCtx.fillText(char, x, y);
+        drawnCount++;
+      } else if(mode === 'shapes'){
+        const a0 = p.a !== undefined ? p.a : 1;
+        const a1 = partner.a !== undefined ? partner.a : a0;
+        const a = a0 + (a1 - a0) * migT;
+        if(a < 0.02) continue;
+        const r0 = p.r || 4, r1 = partner.r || r0;
+        const rBlend = r0 + (r1 - r0) * migT;
+        const r = rBlend * ownPulse;
+        const rot0 = p.rot || 0, rot1 = partner.rot || rot0;
+        const rot = rot0 + (rot1 - rot0) * migT + Math.sin(ownPhase) * 0.3 * animAmp;
+        // Shape type swap at midpoint
+        const shape = migT > 0.5 ? (partner.shape || p.shape) : p.shape;
+        destCtx.globalAlpha = a;
+        destCtx.save();
+        destCtx.translate(x, y);
+        destCtx.rotate(rot);
+        destCtx.beginPath();
+        const s = r * 2;
+        if(shape === 'tri'){
+          const hh = s * 0.866;
+          destCtx.moveTo(0, -hh * 0.6667);
+          destCtx.lineTo(-s/2, hh * 0.3333);
+          destCtx.lineTo(s/2, hh * 0.3333);
+          destCtx.closePath();
+        } else if(shape === 'sq'){
+          destCtx.rect(-s/2, -s/2, s, s);
+        } else {
+          destCtx.arc(0, 0, s/2, 0, Math.PI * 2);
+        }
+        destCtx.fill();
+        destCtx.restore();
+        drawnCount++;
+      } else if(mode === 'gradient'){
+        // Vertical strip — keep position & width, lerp height + gray + alpha
+        const a0 = p.a !== undefined ? p.a : 1;
+        const a1 = partner.a !== undefined ? partner.a : a0;
+        const a = a0 + (a1 - a0) * migT;
+        if(a < 0.02) continue;
+        const h0 = p.h || 4, h1 = partner.h || h0;
+        const hh = (h0 + (h1 - h0) * migT) * ownPulse;
+        const g0 = p.gray !== undefined ? p.gray : 0;
+        const g1 = partner.gray !== undefined ? partner.gray : g0;
+        const g = Math.round(g0 + (g1 - g0) * migT);
+        destCtx.fillStyle = 'rgba(' + g + ',' + g + ',' + g + ',' + a + ')';
+        destCtx.fillRect(x - p.w * 0.5, y - hh * 0.5, p.w, hh);
+        drawnCount++;
+      } else if(mode === 'weave'){
+        // Vertical thread segment — swap with paired neighbour, lerp thickness/length
+        const a0 = p.a !== undefined ? p.a : 1;
+        const a1 = partner.a !== undefined ? partner.a : a0;
+        const a = a0 + (a1 - a0) * migT;
+        if(a < 0.02) continue;
+        const w0 = p.w || 2, w1 = partner.w || w0;
+        const ww = w0 + (w1 - w0) * migT;
+        const h0 = p.h || 4, h1 = partner.h || h0;
+        const hh = h0 + (h1 - h0) * migT;
+        destCtx.globalAlpha = a;
+        destCtx.fillRect(x - ww * 0.5, y - hh * 0.5, ww, hh);
+        drawnCount++;
+      } else {
+        // dots / displace / dispersion — lerp radius and alpha toward partner,
+        // then multiply by ownPulse so each dot is also breathing on its own
+        // schedule. This guarantees visible motion even if partner radius is
+        // very close to original.
+        const r0 = p.r || p.size || 2;
+        const r1 = partner.r || partner.size || r0;
+        const rBlend = r0 + (r1 - r0) * migT;
+        const r = rBlend * ownPulse;
+        const a0 = (p.a !== undefined) ? p.a : (p.alpha !== undefined ? p.alpha : 1);
+        const a1 = (partner.a !== undefined) ? partner.a : (partner.alpha !== undefined ? partner.alpha : a0);
+        const a = a0 + (a1 - a0) * migT;
+        if(a < 0.02) continue;
+        destCtx.globalAlpha = a;
+        destCtx.beginPath();
+        destCtx.arc(x, y, Math.max(0.3, r), 0, Math.PI * 2);
+        destCtx.fill();
+        drawnCount++;
+      }
+    }
+    destCtx.globalAlpha = 1;
+    destCtx.fillStyle = '#000';
+    // Safety: if nothing actually rendered (all elements transparent or filter
+    // skipped them) fall back to the source canvas so the user doesn't see a
+    // blank stage on filter switch. This avoids the "switched to Abstract +
+    // Shuffle and my creative disappeared" bug.
+    if(drawnCount === 0){
+      destCtx.drawImage(sourceCanvas, 0, 0);
+    }
+  }
+
   function applyASCIIAnimation(destCtx, sourceCanvas, w, h, t, tSec){
     // Pixel-level effects ignore glyph metadata — delegate to applyModernEffect
-    if(animMode === 'pixelate' || animMode === 'pixelhd' || animMode === 'aiscan'){
+    if(animMode === 'pixelate' || animMode === 'pixelhd' || animMode === 'aiscan' || animMode === 'reveal'){
       return applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, animMode);
     }
 
@@ -2114,6 +2466,9 @@
     const phase = (tSec % cycleTime) / cycleTime;
     const tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
     const cx = w * 0.5, cy = h * 0.5;
+
+    // 'shuffle' is handled at the top of applyAnimationEffect via
+    // applyShuffleAnimation — it's not Signs-specific anymore.
 
     // Chromatic mode draws RGB triplets via globalCompositeOperation
     if(animMode === 'chromatic'){
@@ -2152,7 +2507,7 @@
         ox = (Math.sin(p.x*0.008*animFreq + t1) + 0.5*Math.sin(p.x*0.022*animFreq + t1*1.7)) * animAmp * 55;
         oy = (Math.cos(p.y*0.008*animFreq - t1*0.7) + 0.5*Math.cos(p.y*0.022*animFreq + t1*1.3)) * animAmp * 55;
       } else if(animMode === 'glitch'){
-        const burstSeed = Math.floor(tSec * 6) + i * 0.31;
+        const burstSeed = Math.floor(t * 6) + i * 0.31; // speed-scaled
         if(seededRandom(burstSeed) > 0.82){
           ox = (seededRandom(burstSeed * 1.7) - 0.5) * animAmp * 90;
           alpha = 0.4 + seededRandom(burstSeed * 2.3) * 0.6;
@@ -2711,6 +3066,7 @@
     const detailFactor = (detail-10)/(90-10);
     const blurAmount = Math.floor((1-detailFactor)*8);
     const step = Math.max(3, size * (0.4 + detailFactor*0.6));
+    weaveMetadata = [];
     
     // Simple vertical blur
     const blurred = new Uint8ClampedArray(data);
@@ -2759,9 +3115,26 @@
           const thickness = Math.max(1, step*0.7);
           const offsetX = (n-0.5)*step*0.3;
           ctx.fillRect(x + offsetX, startY, thickness, endY-startY);
+          weaveMetadata.push({
+            x: x + offsetX + thickness * 0.5,
+            y: (startY + endY) * 0.5,
+            w: thickness,
+            h: endY - startY,
+            a: 1
+          });
         }
       }
     }
+    // Re-sort by y-bucket then x so adjacent metadata indices are HORIZONTAL
+    // neighbours (different columns at similar height). Default render order
+    // is column-major, which would pair adjacent segments in the SAME column
+    // and Shuffle motion would be barely visible.
+    const rowSize = Math.max(8, Math.floor(Math.min(w, h) / 40));
+    weaveMetadata.sort((a, b) => {
+      const ra = Math.floor(a.y / rowSize), rb = Math.floor(b.y / rowSize);
+      if(ra !== rb) return ra - rb;
+      return a.x - b.x;
+    });
   }
   
   function renderShapes(ctx, imgData, size, detail, w, h, invert){
@@ -2770,7 +3143,8 @@
     const detailFactor = (detail - 10)/(90-10);
     const step = Math.max(8, size * (1.5 - detailFactor*0.8));
     let seedCounter = 12345;
-    
+    shapesMetadata = [];
+
     for(let y=step/2; y<h; y+=step){
       for(let x=step/2; x<w; x+=step){
         let sumBright=0, count=0;
@@ -2821,10 +3195,11 @@
         }
         ctx.fill();
         ctx.restore();
+        shapesMetadata.push({ x, y, r: objSize * 0.5, a: 1, shape: shapeType, rot: rotation });
       }
     }
   }
-  
+
   function renderASCII(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const detailFactor = (detail - 10)/(90-10);
@@ -2912,12 +3287,13 @@
   function renderGradient(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const detailFactor = (detail - 10)/(90-10);
-    
+
     // Optimize: Larger strips = fewer iterations
     const stripWidth = Math.max(3, size * 0.8);
     const stepY = Math.max(2, Math.floor(size * 0.3)); // Skip pixels vertically
-    
+
     let seedCounter = 12345;
+    gradientMetadata = [];
     
     // Draw vertical strips with varying heights
     for(let x=0; x<w; x+=stripWidth){
@@ -2959,7 +3335,15 @@
           const alpha = 0.65 + dark * 0.35;
           ctx.fillStyle = `rgba(${grayValue},${grayValue},${grayValue},${alpha})`;
           ctx.fillRect(x, y, actualWidth, stripHeight);
-          
+          gradientMetadata.push({
+            x: x + actualWidth * 0.5,
+            y: y + stripHeight * 0.5,
+            w: actualWidth,
+            h: stripHeight,
+            gray: grayValue,
+            a: alpha
+          });
+
           // Skip ahead by the strip height to avoid overlap
           y += stripHeight - 1;
         }
@@ -3060,12 +3444,15 @@
     
     // Sort particles by z-depth (back to front)
     particles.sort((a, b) => a.z - b.z);
-    
+
+    // Snapshot for animation overlays
+    dispersionMetadata = [];
+
     // Draw particles with subtle glow only for larger particles
     ctx.fillStyle = '#000';
     for(let p of particles){
       if(p.alpha < 0.05) continue;
-      
+
       // Only add glow to larger particles (center area)
       if(p.size > 3){
         ctx.globalAlpha = p.alpha * 0.2; // Subtle outer glow
@@ -3073,14 +3460,25 @@
         ctx.arc(p.x, p.y, p.size * 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
-      
+
       // Core particle (sharp, no extra layers for small particles)
       ctx.globalAlpha = p.alpha;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
+
+      dispersionMetadata.push({ x: p.x, y: p.y, r: p.size, a: p.alpha });
     }
-    
+
+    // Re-sort by spatial position (row-major) so adjacent metadata indices
+    // are physical neighbours — required by Shuffle's reciprocal-pair logic.
+    const rowSize = Math.max(8, Math.floor(Math.min(w, h) / 40));
+    dispersionMetadata.sort((a, b) => {
+      const ra = Math.floor(a.y / rowSize), rb = Math.floor(b.y / rowSize);
+      if(ra !== rb) return ra - rb;
+      return a.x - b.x;
+    });
+
     ctx.globalAlpha = 1.0;
   }
   
@@ -3106,6 +3504,7 @@
     // Show photo settings section
     $('#photomakerSection').classList.remove('hidden');
     updateExportButton();
+    updateEmptyHint();
     // Clear input so same file can be loaded again
     e.target.value = '';
   });
@@ -3184,9 +3583,10 @@
     ensureVideoLoop();
     $('#photomakerSection').classList.remove('hidden');
     updateExportButton();
+    updateEmptyHint();
     e.target.value = '';
   });
-  
+
   $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
   $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
   $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
@@ -3196,25 +3596,74 @@
   //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
   //  - Else → hidden
   function updateExportButton(){
-    const btn = document.getElementById('exportVideo');
-    const lbl = document.getElementById('exportVideoLabel');
-    if(!btn || !lbl) return;
-    if(btn.dataset.busy === '1') return; // do not stomp on running recording UI
+    // The single DOWNLOAD button adapts its label based on what's currently
+    // on canvas (video / animated photo / static photo). The legacy
+    // #exportVideo button is hidden — runVideoExport() is reached via #download.
     const hasVideo = photos.some(p => p.isVideo);
-    if(hasVideo){
-      btn.style.display = 'flex';
-      btn.dataset.mode = 'fullvideo';
-      lbl.textContent = 'DOWNLOAD VIDEO';
-    } else if(filtersAnimated){
-      btn.style.display = 'flex';
-      btn.dataset.mode = 'anim5s';
-      lbl.textContent = 'RECORD VIDEO (5S)';
-    } else {
+    const dlBtn = document.getElementById('download');
+    const dlLbl = document.getElementById('downloadLabel');
+    if(dlLbl && dlBtn && dlBtn.dataset.busy !== '1'){
+      if(hasVideo){
+        dlLbl.textContent = 'DOWNLOAD VIDEO';
+      } else if(filtersAnimated){
+        dlLbl.textContent = 'DOWNLOAD MP4 (5S)';
+      } else {
+        dlLbl.textContent = 'DOWNLOAD PNG';
+      }
+    }
+    const btn = document.getElementById('exportVideo');
+    if(btn){
       btn.style.display = 'none';
       btn.dataset.mode = '';
     }
   }
+  function updateEmptyHint(){
+    const hint = document.getElementById('emptyHint');
+    if(!hint) return;
+    hint.classList.toggle('hidden', photos.length > 0);
+  }
+  updateEmptyHint();
   $('#animSpeed')?.addEventListener('input', (e)=>{ animSpeed = parseFloat(e.target.value||'1')||1; });
+
+  // Which sliders does each animation mode actually use?
+  //  speed = does the cycle/wave go faster?
+  //  amp   = does amplitude affect the result?
+  //  freq  = does freq affect the result?
+  const ANIM_SLIDER_MAP = {
+    off:       { speed: false, amp: false, freq: false },
+    flow:      { speed: true,  amp: true,  freq: true  },
+    liquid:    { speed: true,  amp: true,  freq: true  },
+    smoke:     { speed: true,  amp: true,  freq: true  },
+    glitch:    { speed: true,  amp: true,  freq: true  },
+    chromatic: { speed: true,  amp: true,  freq: false },
+    pixelate:  { speed: true,  amp: true,  freq: false },
+    particle:  { speed: true,  amp: true,  freq: true  },
+    pixelhd:   { speed: true,  amp: false, freq: true  },
+    aiscan:    { speed: true,  amp: true,  freq: true  },
+    shuffle:   { speed: true,  amp: true,  freq: true  },
+    reveal:    { speed: true,  amp: false, freq: false }
+  };
+  function updateAnimSlidersState(){
+    const cfg = ANIM_SLIDER_MAP[animMode] || ANIM_SLIDER_MAP.off;
+    const pairs = [
+      ['animSpeed', cfg.speed],
+      ['animAmp',   cfg.amp],
+      ['animFreq',  cfg.freq]
+    ];
+    pairs.forEach(([id, on]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.disabled = !on;
+      // Also dim the .lab and .range wrappers via the .disabled class
+      const wrap = el.closest('label.range');
+      if(wrap) wrap.classList.toggle('disabled', !on);
+      const lab = wrap && wrap.previousElementSibling;
+      if(lab && lab.classList && lab.classList.contains('lab')){
+        lab.classList.toggle('disabled', !on);
+      }
+    });
+  }
+
   $('#animMode')?.addEventListener('change', ()=>{
     animMode = $('#animMode').value;
     // Mode acts as the on/off switch — "off" disables animation, anything else enables it
@@ -3224,9 +3673,12 @@
       if(filtersAnimated) animStart = performance.now();
       updateExportButton();
     }
+    updateAnimSlidersState();
     if(filtersAnimated) ensureTickFilters();
     renderPhotomaker();
   });
+  // Initial state — animMode starts as 'off' so SPEED/AMP/FREQ should be greyed
+  updateAnimSlidersState();
   $('#animAmp')?.addEventListener('input', (e)=>{ animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) ensureTickFilters(); });
   $('#animFreq')?.addEventListener('input', (e)=>{ animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) ensureTickFilters(); });
   
@@ -3248,8 +3700,10 @@
   // per-frame timestamps in microseconds, and runs offline — render can take
   // 200ms/frame and the resulting file is still mathematically perfect 30fps.
   async function exportFullVideoWebCodecs(p, btn){
-    const lbl = document.getElementById('exportVideoLabel');
-    const origText = lbl.textContent;
+    // Update the label inside whichever button was used to trigger this
+    // (DOWNLOAD or the hidden #exportVideo). Falls back to exportVideoLabel.
+    const lbl = (btn && btn.querySelector('span')) || document.getElementById('exportVideoLabel');
+    const origText = lbl ? lbl.textContent : '';
     btn.dataset.busy = '1';
     btn.disabled = true;
 
@@ -3311,7 +3765,20 @@
     // Build muxer + encoder
     const muxer = new Mp4Muxer.Muxer({
       target: new Mp4Muxer.ArrayBufferTarget(),
-      video: { codec: 'avc', width: vW, height: vH, frameRate: fps },
+      // IMPORTANT: do NOT pass frameRate here. mp4-muxer uses it as the
+      // track timescale (timescale = frameRate). With frameRate=30, every
+      // frame's mediaTime gets rounded to the nearest 1/30s slot — and
+      // VFC mediaTime values come with float jitter (~0.0333, 0.0334 etc),
+      // so rounding produces an uneven stts table → playback stutters.
+      // Omitting it lets the muxer pick its default high-resolution
+      // timescale (57600), which has enough precision that timestamps
+      // land where they actually are. This was confirmed as the root
+      // cause by two independent code audits.
+      video: { codec: 'avc', width: vW, height: vH },
+      // Some seeks land at currentTime ~0.0001, so the first decoded
+      // frame's mediaTime can be a tiny non-zero value. 'offset' tells
+      // the muxer to subtract that offset instead of throwing.
+      firstTimestampBehavior: 'offset',
       fastStart: 'in-memory'
     });
 
@@ -3322,7 +3789,10 @@
     });
 
     // bitrate ~0.12 bits/px/frame — strong enough for high-motion animation
-    const bitrate = Math.max(8_000_000, Math.min(40_000_000, Math.round(vW * vH * fps * 0.12)));
+    // 12 Mbps floor: 1080p high-motion procedural animation needs more
+    // than the YouTube-default 8 Mbps to avoid mosquito-noise that reads
+    // as motion stutter. Caps at 40 Mbps for 4K.
+    const bitrate = Math.max(12_000_000, Math.min(40_000_000, Math.round(vW * vH * fps * 0.15)));
 
     // Try high profile first, fall back to baseline
     const codecCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
@@ -3368,77 +3838,128 @@
         setTimeout(()=>{ v.removeEventListener('seeked', cb); res(); }, 1000);
       });
 
-      // Drive recording from real decoded video frames via requestVideoFrameCallback.
-      // This avoids two big problems the previous seek-based loop had:
-      //   1) v.duration can lie (VFR/streaming videos report wrong length) →
-      //      output had wrong length / playback "slow motion".
-      //   2) Browser seek snaps to nearest keyframe, not exact time → frames
-      //      could repeat or skip.
-      // With VFC we get the exact mediaTime of each actually-decoded source
-      // frame, so file timing == source timing == reality.
-      const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
-      const keyframeEvery = 60;
-      let encoded = 0;
-      let lastMediaTime = -1;
-
-      const finished = new Promise(async (resolve)=>{
-        let resolved = false;
-        const finish = ()=>{ if(!resolved){ resolved = true; resolve(); } };
-
-        const onFrame = async (now, metadata) => {
-          if(!_recordingActive){ finish(); return; }
-          if(encoderError){ finish(); return; }
-
-          const mediaTime = metadata.mediaTime;
-          // Guard against loop wrap or out-of-order frames
-          if(mediaTime <= lastMediaTime){
-            v.requestVideoFrameCallback(onFrame);
-            return;
-          }
-          lastMediaTime = mediaTime;
-
-          // Animation time = real source frame time → perfect sync
-          _recordingVideoTime = mediaTime;
-          renderPhotomaker();
-          recCompCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, vW, vH);
-          recCompCtx.drawImage(recPhotoLayer, 0, 0);
-
-          const frame = new VideoFrame(recCompCanvas, {
-            timestamp: Math.round(mediaTime * 1_000_000),
-            duration: 33333
+      // ---- Detect source video's real frame rate ----
+      // Without this we'd be sampling at a fixed 30fps regardless of source.
+      // For 60fps sources every other my-frame would land between real frames
+      // → browser snaps to nearest keyframe → some output frames repeat,
+      // others jump → motion looks like "fast then slow then fast" in the
+      // exported video. By matching output fps to source fps, every i/fps
+      // step lands exactly on a real source frame.
+      lbl.textContent = 'PREP…';
+      let detectedFps = 30;
+      try {
+        if(typeof v.requestVideoFrameCallback === 'function'){
+          detectedFps = await new Promise((resolveFps)=>{
+            const times = [];
+            let measured = 0;
+            const SAMPLE_COUNT = 8;
+            let safety = setTimeout(()=> resolveFps(30), 2000);
+            const onMeasure = (now, metadata) => {
+              times.push(metadata.mediaTime);
+              measured++;
+              if(measured < SAMPLE_COUNT){
+                v.requestVideoFrameCallback(onMeasure);
+              } else {
+                clearTimeout(safety);
+                v.pause();
+                const intervals = [];
+                for(let k = 1; k < times.length; k++){
+                  const d = times[k] - times[k-1];
+                  if(d > 0 && d < 1) intervals.push(d);
+                }
+                if(intervals.length === 0){ resolveFps(30); return; }
+                intervals.sort((a,b)=> a-b);
+                const median = intervals[Math.floor(intervals.length / 2)];
+                const guess = 1 / median;
+                // Snap to common rates so we don't end up with 29.97 vs 30 weirdness
+                const COMMON = [24, 25, 30, 50, 60];
+                let best = 30, bestErr = Infinity;
+                for(const c of COMMON){
+                  const err = Math.abs(c - guess);
+                  if(err < bestErr){ bestErr = err; best = c; }
+                }
+                resolveFps(bestErr < 3 ? best : Math.round(guess));
+              }
+            };
+            v.requestVideoFrameCallback(onMeasure);
+            v.play().catch(()=> resolveFps(30));
           });
-          try {
-            encoder.encode(frame, { keyFrame: encoded % keyframeEvery === 0 });
-          } catch(e){ encoderError = e; }
-          frame.close();
-          encoded++;
+        }
+      } catch(_){}
+      detectedFps = Math.max(10, Math.min(120, detectedFps || 30));
 
-          // Progress
-          if(duration > 0){
-            const pct = Math.min(99, Math.floor((mediaTime / duration) * 100));
-            lbl.textContent = 'ENCODING ' + pct + '%';
-          } else {
-            lbl.textContent = 'ENCODING ' + encoded;
-          }
-
-          // Throttle if encoder is falling behind
-          if(encoder.encodeQueueSize > 8){
-            await new Promise(r => setTimeout(r, 0));
-          }
-
-          v.requestVideoFrameCallback(onFrame);
-        };
-
-        v.addEventListener('ended', finish, {once:true});
-        v.requestVideoFrameCallback(onFrame);
-        try { await v.play(); } catch(e){ console.warn('play failed:', e); finish(); }
+      // Re-rewind after the measurement playback
+      v.pause();
+      v.currentTime = 0;
+      await new Promise((res)=>{
+        const cb = ()=>{ v.removeEventListener('seeked', cb); res(); };
+        v.addEventListener('seeked', cb);
+        setTimeout(()=>{ v.removeEventListener('seeked', cb); res(); }, 1000);
       });
 
-      await finished;
-      v.pause();
+      // Seek-based offline loop. Crucial difference from a VFC-driven loop:
+      // here video is PAUSED and we step it frame-by-frame via currentTime.
+      // The render can take 300ms per frame (Liquid/Smoke do per-pixel work)
+      // and the output is still a clean 30fps file with full duration. With
+      // a VFC loop driven by v.play(), playback runs in real time — heavy
+      // filters can't keep up and we miss real source frames → output ends
+      // up at 5-10 effective fps → visibly choppy.
+      //
+      // We now use a fixed fps grid + frame-index timestamps, because the
+      // muxer's timescale is no longer 30 (we dropped frameRate from the
+      // muxer config — see above). Even spacing → clean playback.
+      // Match output fps to detected source fps so every i/fpsOut lands
+      // exactly on a real source frame (no keyframe-snap repeats, no skips).
+      const fpsOut = detectedFps;
+      const frameDurUs = Math.round(1_000_000 / fpsOut);
+      const keyframeEvery = Math.max(30, fpsOut * 2);
+      const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 10;
+      const totalFrames = Math.max(1, Math.floor(duration * fpsOut));
+      let encoded = 0;
+
+      for(let i = 0; i < totalFrames; i++){
+        if(!_recordingActive) break;
+        if(encoderError) break;
+
+        const targetTime = i / fpsOut;
+        v.currentTime = targetTime;
+        await new Promise((res)=>{
+          const cb = ()=>{ v.removeEventListener('seeked', cb); res(); };
+          v.addEventListener('seeked', cb);
+          setTimeout(()=>{ v.removeEventListener('seeked', cb); res(); }, 500);
+        });
+
+        // Animation time follows the same fixed grid as the file → perfect sync
+        _recordingVideoTime = targetTime;
+        renderPhotomaker();
+        recCompCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, vW, vH);
+        recCompCtx.drawImage(recPhotoLayer, 0, 0);
+
+        const frame = new VideoFrame(recCompCanvas, {
+          timestamp: i * frameDurUs,
+          duration: frameDurUs
+        });
+        try {
+          encoder.encode(frame, { keyFrame: i % keyframeEvery === 0 });
+        } catch(e){ encoderError = e; }
+        frame.close();
+        encoded++;
+
+        // Progress
+        const pct = Math.min(99, Math.floor((i / totalFrames) * 100));
+        lbl.textContent = 'ENCODING ' + pct + '%';
+
+        // Wait for encoder queue if backed up — don't skip frames
+        while(encoder.encodeQueueSize > 8){
+          await new Promise(r => setTimeout(r, 4));
+        }
+      }
 
       lbl.textContent = 'FINALIZING…';
       await encoder.flush();
+      // Close the encoder so the muxer sees the true number of frames and
+      // doesn't extend the duration past the last real frame.
+      try { encoder.close(); } catch(_){}
       muxer.finalize();
 
       const buffer = muxer.target.buffer;
@@ -3476,8 +3997,8 @@
   }
 
   async function exportFullVideo(p, btn){
-    const lbl = document.getElementById('exportVideoLabel');
-    const origText = lbl.textContent;
+    const lbl = (btn && btn.querySelector('span')) || document.getElementById('exportVideoLabel');
+    const origText = lbl ? lbl.textContent : '';
     btn.dataset.busy = '1';
     btn.disabled = true;
 
@@ -3707,13 +4228,15 @@
     }
   }
 
-  $('#exportVideo')?.addEventListener('click', async ()=>{
-    const btn = $('#exportVideo');
+  // Shared video-export entry point. Routes to:
+  //  - exportFullVideoWebCodecs / exportFullVideo when a video is loaded
+  //  - 5-second synthetic-time MediaRecorder loop for animated photos
+  // The triggering button (#exportVideo or #download) gets its busy flag,
+  // disabled state, and label updated by passing in (btn, lbl).
+  async function runVideoExport(btn, lbl){
+    if(!btn) return;
     if(btn.dataset.busy === '1') return;
     // Mode A: download the source video fully through filter + animation.
-    // Prefer offline WebCodecs export (guaranteed-smooth output). Fall back to
-    // realtime MediaRecorder export only on browsers that lack VideoEncoder
-    // (older Safari/Firefox) — there it'll be jerky but at least produce a file.
     const videoPhoto = photos.find(p => p.isVideo);
     if(videoPhoto){
       const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
@@ -3723,14 +4246,15 @@
       }
       return exportFullVideo(videoPhoto, btn);
     }
-    // Mode B (legacy): 5-second synthetic-time animation recording for a photo
+    // Mode B: 5-second synthetic-time animation recording for a photo
     if(!filtersAnimated || photos.length===0){
       alert('Включите анимацию и загрузите фото');
       return;
     }
 
-    const lbl = document.getElementById('exportVideoLabel');
     const origText = lbl ? lbl.textContent : '';
+    btn.dataset.busy = '1';
+    btn.disabled = true;
 
     try {
       // Create a temporary canvas to capture the composite (WebGL + photo layer)
@@ -3754,8 +4278,15 @@
       else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')){ mimeType = 'video/webm;codecs=vp8'; fileExt = 'webm'; }
       else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
       
-      // MediaRecorder setup with high quality
-      const stream = captureCanvas.captureStream(30); // 30 fps
+      // MediaRecorder setup with high quality.
+      // captureStream(0) means "only capture when requestFrame() is called",
+      // giving us deterministic per-frame control instead of relying on the
+      // browser polling the canvas at its own rate (which gets throttled when
+      // the tab is backgrounded — that's what makes the export come out as
+      // 1 static frame). We call requestFrame() once per renderLoop tick.
+      const stream = captureCanvas.captureStream(0);
+      const captureTrack = stream.getVideoTracks()[0];
+      const canRequestFrame = captureTrack && typeof captureTrack.requestFrame === 'function';
       videoRecorder = new MediaRecorder(stream, {
         mimeType: mimeType,
         videoBitsPerSecond: 30000000 // 30 Mbps для максимального качества
@@ -3777,6 +4308,9 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=> URL.revokeObjectURL(url), 2000);
         if(lbl) lbl.textContent = origText;
+        btn.dataset.busy = '';
+        btn.disabled = false;
+        updateExportButton();
       };
       
       // Start recording with data chunks every 100ms for stability
@@ -3794,55 +4328,76 @@
       let frameCount = 0;
       
       const renderLoop = ()=>{
-        const now = performance.now();
-        const elapsed = now - startTime;
-        
-        if(elapsed >= targetDuration){
-          // Disable recording mode
+        // Synthetic frame index drives the clock — wall-clock is only used
+        // for the progress label. This way the loop pacing (setTimeout 33ms)
+        // doesn't affect the resulting video duration; we always render
+        // exactly fps × seconds = 150 frames.
+        const totalFrames = Math.round((targetDuration/1000) * fps); // 150
+        if(frameCount >= totalFrames){
           isRecording = false;
-          
-          // Wait longer for final frames to be encoded
           setTimeout(()=>{
-            videoRecorder.stop();
+            try { videoRecorder.stop(); } catch(_){}
             if(lbl) lbl.textContent = origText;
-            console.log(`Recording complete: ${elapsed.toFixed(0)}ms, ${frameCount} frames, using ${mimeType}`);
+            const elapsedReal = performance.now() - startTime;
+            console.log(`Recording complete: ${elapsedReal.toFixed(0)}ms wall, ${frameCount} frames captured, using ${mimeType}`);
+            if(frameCount < 10){
+              alert('Запись не удалась: получилось всего ' + frameCount + ' кадров. Попробуйте ещё раз и не сворачивайте окно браузера во время записи.');
+            }
           }, 500);
           return;
         }
 
-        // Update progress
-        const progress = Math.floor((elapsed / targetDuration) * 100);
+        // Update progress label off the actual frame count, not wall clock
+        const progress = Math.floor((frameCount / totalFrames) * 100);
         if(lbl) lbl.textContent = `RECORDING ${progress}%`;
-        
-        // Increment synthetic time by FIXED step (guarantees smooth animation)
-        // Apply animSpeed to respect user's speed setting
-        syntheticTime += frameTimeStep * Math.max(0.2, animSpeed);
-        
+
+        // Advance the animation clock by exactly one frame's worth of seconds.
+        // No animSpeed multiplier here — renderPhotomaker already applies it
+        // inside (t = tSec * animSpeed). Double-applying would square SPEED.
+        syntheticTime += frameTimeStep;
+
         // Render current animation frame using synthetic time
         renderPhotomaker();
-        
-        // Copy to capture canvas with high quality
+
+        // Copy composite (gradient + photo/filter overlay) to capture canvas
         captureCtx.imageSmoothingEnabled = true;
         captureCtx.imageSmoothingQuality = 'high';
         captureCtx.clearRect(0,0,pw,ph);
         captureCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
         captureCtx.drawImage(photoLayer, 0, 0);
-        
+
+        // Push this frame into the MediaRecorder stream. With captureStream(0)
+        // the browser only samples the canvas when we explicitly ask — this
+        // is what guarantees each render becomes a frame in the output MP4,
+        // regardless of tab focus / RAF throttling.
+        if(canRequestFrame){
+          try { captureTrack.requestFrame(); } catch(_){}
+        }
+
         frameCount++;
-        
-        // Continue loop at maximum speed (time is synthetic, not tied to real time)
-        requestAnimationFrame(renderLoop);
+
+        // setTimeout (not RAF) so the loop keeps running at full speed even
+        // if the tab is backgrounded during recording. RAF throttles to ~1Hz
+        // on hidden tabs, which previously produced 1-frame static "videos".
+        setTimeout(renderLoop, Math.round(1000/fps));
       };
-      
+
       renderLoop();
       
     } catch(err){
       console.error('Video export error:', err);
       alert('Ошибка записи видео: ' + err.message);
       if(lbl) lbl.textContent = origText;
+      btn.dataset.busy = '';
+      btn.disabled = false;
+      updateExportButton();
     }
+  }
+
+  $('#exportVideo')?.addEventListener('click', ()=>{
+    runVideoExport($('#exportVideo'), document.getElementById('exportVideoLabel'));
   });
-  
+
   // removed photoScale slider listener (scaling now on-canvas)
 
   // (удалены глобальные обработчики stage/mousemove для предотвращения дребезга)
