@@ -766,21 +766,30 @@
   });
   canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); brushPx = Math.max(1, Math.min(64, brushPx + (e.deltaY<0?1:-1))); }, {passive:false});
   $('#clear').onclick = ()=>{
-    // RESET — reset all filters / animation / sliders to defaults, but KEEP
-    // the uploaded photo or video on the canvas. The user explicitly wants to
-    // start over with effects without re-uploading. To wipe everything (drop
-    // photos too) use Escape or upload a new file.
+    // RESET — return everything (filters, animation, brush strokes, SVG art,
+    // photo position) to the freshly-loaded state, but KEEP the uploaded
+    // photo / video on the canvas. To drop the photo too, use Delete.
+    // Snapshot first so Ctrl+Z can undo the reset.
+    saveState();
+
     svgLoaded = false;
     initState();
     draw();
 
-    // Reset each loaded photo's per-photo state to defaults
+    // Reset each loaded photo: filter settings AND transform (re-center / unzoom)
     photos.forEach(p => {
       p.pattern = 'none';
       p.size = 20;
       p.detail = 50;
       p.invert = false;
+      p.scale = 1;
+      p.offsetX = 0;
+      p.offsetY = 0;
     });
+    // Drop drag/resize handles too
+    showPhotoSelection = false;
+    isDraggingPhoto = false;
+    isResizingPhoto = false;
 
     // Reset animation globals
     filtersAnimated = false;
@@ -799,6 +808,7 @@
     setVal('animAmp', 0.3);
     setVal('animFreq', 1.2);
     const inv = document.getElementById('invertPattern'); if(inv) inv.checked = false;
+    const grain = document.getElementById('grain'); if(grain) grain.checked = false;
     if(typeof window.refreshSliderReadouts === 'function') window.refreshSliderReadouts();
 
     if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
