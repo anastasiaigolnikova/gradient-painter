@@ -563,7 +563,12 @@
       }
     }
     
-    // Save to history stack
+    // Snapshot photos array (shallow clone — keeps ImageBitmap / video refs alive)
+    // plus all per-photo and global filter / animation settings, so undo can
+    // walk back through uploads and filter / animation changes too — not just
+    // brush strokes.
+    const photosSnapshot = photos.map(p => Object.assign({}, p));
+
     historyStack.push({
       pixels: pixels,
       width: W,
@@ -572,7 +577,14 @@
       photoImage: photoImage,
       photoData: photoData,
       photoLayerW: photoLayer.width,
-      photoLayerH: photoLayer.height
+      photoLayerH: photoLayer.height,
+      photosSnapshot,
+      selectedIndex,
+      animMode,
+      animSpeed,
+      animAmp,
+      animFreq,
+      filtersAnimated
     });
     
     // Limit history size
@@ -619,11 +631,50 @@
       // Hide photo settings section when no photo
       $('#photomakerSection').classList.add('hidden');
     }
-    
+
+    // Restore the photos array and global animation / filter state. Dispose
+    // any photo (esp. video) that's no longer present in the snapshot so we
+    // don't leak blob URLs / running video elements.
+    if (Array.isArray(prevState.photosSnapshot)) {
+      const keep = new Set(prevState.photosSnapshot);
+      photos.forEach(p => { if (!keep.has(p)) disposePhoto(p); });
+      photos.length = 0;
+      prevState.photosSnapshot.forEach(p => photos.push(p));
+      selectedIndex = typeof prevState.selectedIndex === 'number' ? prevState.selectedIndex : (photos.length ? 0 : -1);
+    }
+    if (typeof prevState.animMode === 'string')       animMode       = prevState.animMode;
+    if (typeof prevState.animSpeed === 'number')      animSpeed      = prevState.animSpeed;
+    if (typeof prevState.animAmp === 'number')        animAmp        = prevState.animAmp;
+    if (typeof prevState.animFreq === 'number')       animFreq       = prevState.animFreq;
+    if (typeof prevState.filtersAnimated === 'boolean') filtersAnimated = prevState.filtersAnimated;
+
+    // Show / hide the photomaker section based on whether a photo survived
+    if (photos.length > 0) {
+      $('#photomakerSection').classList.remove('hidden');
+      syncUIFromSelected();
+    } else {
+      $('#photomakerSection').classList.add('hidden');
+    }
+    if (typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
+    if (typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
+    // Sync the animation sliders back to the restored values
+    const sv = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = String(v); };
+    sv('animMode', animMode);
+    sv('animSpeed', animSpeed);
+    sv('animAmp', animAmp);
+    sv('animFreq', animFreq);
+
     // Restore svgLoaded state
     svgLoaded = prevState.svgLoaded;
-    
-    // Redraw
+
+    // Re-render photomaker layer (filter / animation) and the WebGL gradient
+    if (photos.length > 0) {
+      renderPhotomaker();
+      if (filtersAnimated) ensureTickFilters();
+      if (hasAnyVideo()) ensureVideoLoop();
+    }
+    updateExportButton();
+    updateEmptyHint();
     draw();
   }
 
@@ -841,11 +892,40 @@
     btn.onclick = ()=> undo();
   });
   
-  window.addEventListener('keydown', (e)=>{ 
-    if(e.key==='Escape'){ 
+  // Helper: drop all loaded photos / videos from the canvas (used by Delete key)
+  function clearAllPhotos(){
+    if(photos.length === 0) return;
+    saveState();
+    photos.forEach(disposePhoto);
+    photos.length = 0;
+    selectedIndex = -1;
+    originalPhoto = null;
+    if(photoLayer && photoLayer.width && photoLayer.height){
+      photoCtx.clearRect(0, 0, photoLayer.width, photoLayer.height);
+    }
+    $('#photomakerSection').classList.add('hidden');
+    updateExportButton();
+    updateEmptyHint();
+    draw();
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    // Ignore key shortcuts while the user is typing into an input / textarea
+    const tag = (e.target && e.target.tagName) || '';
+    const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
+
+    if(e.key==='Escape'){
       svgLoaded = false;
-      initState(); 
-      draw(); 
+      initState();
+      draw();
+    }
+    // Delete / Backspace → remove uploaded photo / video from the canvas.
+    // Ignored if the user is editing an input (so hex inputs etc. still work).
+    if((e.key === 'Delete' || e.key === 'Backspace') && !isTyping){
+      if(photos.length > 0){
+        e.preventDefault();
+        clearAllPhotos();
+      }
     }
     // Ctrl+Z or Cmd+Z for undo
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -3635,7 +3715,7 @@
     e.target.value = '';
   });
 
-  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
+  $('#patternSelect')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; saveState(); p.pattern = $('#patternSelect').value; syncAnimControlsForPattern(); renderPhotomaker(); ensureTickFilters(); });
   $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
   $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
   $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; p.invert = $('#invertPattern').checked; renderPhotomaker(); });
@@ -3713,6 +3793,7 @@
   }
 
   $('#animMode')?.addEventListener('change', ()=>{
+    saveState();
     animMode = $('#animMode').value;
     // Mode acts as the on/off switch — "off" disables animation, anything else enables it
     const shouldAnimate = animMode !== 'off';
