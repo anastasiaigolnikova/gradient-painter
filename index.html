@@ -143,6 +143,9 @@
     #photoUi .btn-apply:hover{background:#222}
     .hidden{display:none}
   </style>
+  <!-- mp4-muxer: wraps raw H.264 chunks from WebCodecs VideoEncoder into a
+       playable MP4. Bundled locally (32KB) — no external CDN dependency. -->
+  <script src="./mp4-muxer.min.js"></script>
 </head>
 <body>
 <div id="wrap">
@@ -1333,7 +1336,12 @@
   // While exporting full-size video, the regular videoLoop must yield to the
   // dedicated record loop so they don't both render into the same canvas.
   let _recordingActive = false;
-  
+  // When set during recording, renderPhotomaker uses this as animation time
+  // instead of wall-clock. This keeps Liquid/Smoke/Glitch smooth even when a
+  // single frame is slow to render — animation advances by video-frame
+  // duration, not by how long JS spent on the previous frame.
+  let _recordingVideoTime = null;
+
   // Multi-photo support
   let photos = []; // [{image:ImageBitmap, scale:number, offsetX:number, offsetY:number}]
   let selectedIndex = -1;
@@ -1400,7 +1408,14 @@
 
     // Draw all photos in order
     // Use synthetic time during recording for smooth video, real time otherwise
-    const tSec = isRecording ? syntheticTime : (performance.now()-animStart)/1000;
+    // Animation clock: synthetic time during legacy 5s record, video.currentTime
+    // during full-video export (keeps Liquid/Smoke smooth regardless of render cost),
+    // wall-clock otherwise.
+    const tSec = isRecording
+      ? syntheticTime
+      : (_recordingActive && _recordingVideoTime != null)
+        ? _recordingVideoTime
+        : (performance.now()-animStart)/1000;
     const t = tSec * Math.max(0.2,animSpeed);
 
     photos.forEach(p=>{
@@ -3224,6 +3239,242 @@
   // We temporarily swap the global render canvases (photoLayer/animCanvas/offscreen)
   // for ones sized to videoWidth × videoHeight, run renderPhotomaker once per
   // decoded video frame, and capture the result through MediaRecorder.
+  // Offline frame-by-frame video export via WebCodecs.
+  //
+  // Why this exists: MediaRecorder + canvas.captureStream produces stuttery
+  // output because MediaRecorder timestamps frames by wall-clock, not by the
+  // animation's logical time. Even with all sync tricks, exported MP4s feel
+  // jerky on heavy filters. WebCodecs VideoEncoder lets us assign exact
+  // per-frame timestamps in microseconds, and runs offline — render can take
+  // 200ms/frame and the resulting file is still mathematically perfect 30fps.
+  async function exportFullVideoWebCodecs(p, btn){
+    const lbl = document.getElementById('exportVideoLabel');
+    const origText = lbl.textContent;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+
+    const v = p.video;
+    const fps = 30;
+    // Higher resolution is fine here — no realtime budget to hit
+    const MAX_REC_DIM = 1920;
+    let vW = v.videoWidth || 1280;
+    let vH = v.videoHeight || 720;
+    {
+      const longest = Math.max(vW, vH);
+      if(longest > MAX_REC_DIM){
+        const k = MAX_REC_DIM / longest;
+        vW = Math.round(vW * k); vH = Math.round(vH * k);
+      }
+    }
+    // Ensure even dimensions (H.264 requires it)
+    vW = vW - (vW % 2);
+    vH = vH - (vH % 2);
+
+    // Save original canvases to restore after
+    const origPhotoLayer = photoLayer;
+    const origPhotoCtx   = photoCtx;
+    const origAnimCanvas = animCanvas;
+    const origAnimCtx    = animCtx;
+    const origOffscreen  = offscreen;
+    const origOffctx     = offctx;
+    const wasLoop = v.loop;
+    const wasMuted = v.muted;
+    v.loop = false;
+    v.muted = true;
+
+    // Recording-sized canvases
+    const recPhotoLayer = document.createElement('canvas');
+    recPhotoLayer.width = vW; recPhotoLayer.height = vH;
+    const recPhotoCtx   = recPhotoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
+    const recAnimCanvas = document.createElement('canvas');
+    recAnimCanvas.width = vW; recAnimCanvas.height = vH;
+    const recAnimCtx    = recAnimCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+    const recOffscreen  = document.createElement('canvas');
+    recOffscreen.width  = vW; recOffscreen.height = vH;
+    const recOffctx     = recOffscreen.getContext('2d', { alpha: false, willReadFrequently: true });
+    // Composite canvas — gradient + filter overlay → encoder input
+    const recCompCanvas = document.createElement('canvas');
+    recCompCanvas.width = vW; recCompCanvas.height = vH;
+    const recCompCtx    = recCompCanvas.getContext('2d', { alpha: false });
+
+    // Per-filter size scaling so filter density matches preview at the
+    // higher capture resolution
+    const sizeScale = Math.max(
+      vW / Math.max(1, origPhotoLayer.width),
+      vH / Math.max(1, origPhotoLayer.height)
+    );
+    const origPhotoSizes = photos.map(pp => pp.size);
+    if(sizeScale > 1.05 || sizeScale < 0.95){
+      photos.forEach(pp => { if(typeof pp.size === 'number') pp.size = pp.size * sizeScale; });
+    }
+
+    // Build muxer + encoder
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: 'avc', width: vW, height: vH, frameRate: fps },
+      fastStart: 'in-memory'
+    });
+
+    let encoderError = null;
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => { encoderError = e; console.error('VideoEncoder error:', e); }
+    });
+
+    // bitrate ~0.12 bits/px/frame — strong enough for high-motion animation
+    const bitrate = Math.max(8_000_000, Math.min(40_000_000, Math.round(vW * vH * fps * 0.12)));
+
+    // Try high profile first, fall back to baseline
+    const codecCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
+    let configured = false;
+    for(const codec of codecCandidates){
+      try {
+        const support = await VideoEncoder.isConfigSupported({
+          codec, width: vW, height: vH, bitrate, framerate: fps, avc: { format: 'avc' }
+        });
+        if(support && support.supported){
+          encoder.configure({ codec, width: vW, height: vH, bitrate, framerate: fps, avc: { format: 'avc' } });
+          configured = true;
+          break;
+        }
+      } catch(_){}
+    }
+    if(!configured){
+      alert('WebCodecs H.264 не поддерживается этим браузером. Откатываюсь на старый способ записи.');
+      // Fallback: clean up and call old MediaRecorder path
+      v.loop = wasLoop; v.muted = wasMuted;
+      btn.dataset.busy = '';
+      btn.disabled = false;
+      lbl.textContent = origText;
+      updateExportButton();
+      return exportFullVideo(p, btn);
+    }
+
+    try {
+      _recordingActive = true;
+      _skipPhotoLayerSync = true;
+
+      // Swap globals to record-sized canvases
+      photoLayer = recPhotoLayer; photoCtx = recPhotoCtx;
+      animCanvas = recAnimCanvas; animCtx = recAnimCtx;
+      offscreen  = recOffscreen;  offctx  = recOffctx;
+
+      // Rewind to start
+      v.pause();
+      v.currentTime = 0;
+      await new Promise((res)=>{
+        const cb = ()=>{ v.removeEventListener('seeked', cb); res(); };
+        v.addEventListener('seeked', cb);
+        setTimeout(()=>{ v.removeEventListener('seeked', cb); res(); }, 1000);
+      });
+
+      // Drive recording from real decoded video frames via requestVideoFrameCallback.
+      // This avoids two big problems the previous seek-based loop had:
+      //   1) v.duration can lie (VFR/streaming videos report wrong length) →
+      //      output had wrong length / playback "slow motion".
+      //   2) Browser seek snaps to nearest keyframe, not exact time → frames
+      //      could repeat or skip.
+      // With VFC we get the exact mediaTime of each actually-decoded source
+      // frame, so file timing == source timing == reality.
+      const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+      const keyframeEvery = 60;
+      let encoded = 0;
+      let lastMediaTime = -1;
+
+      const finished = new Promise(async (resolve)=>{
+        let resolved = false;
+        const finish = ()=>{ if(!resolved){ resolved = true; resolve(); } };
+
+        const onFrame = async (now, metadata) => {
+          if(!_recordingActive){ finish(); return; }
+          if(encoderError){ finish(); return; }
+
+          const mediaTime = metadata.mediaTime;
+          // Guard against loop wrap or out-of-order frames
+          if(mediaTime <= lastMediaTime){
+            v.requestVideoFrameCallback(onFrame);
+            return;
+          }
+          lastMediaTime = mediaTime;
+
+          // Animation time = real source frame time → perfect sync
+          _recordingVideoTime = mediaTime;
+          renderPhotomaker();
+          recCompCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, vW, vH);
+          recCompCtx.drawImage(recPhotoLayer, 0, 0);
+
+          const frame = new VideoFrame(recCompCanvas, {
+            timestamp: Math.round(mediaTime * 1_000_000),
+            duration: 33333
+          });
+          try {
+            encoder.encode(frame, { keyFrame: encoded % keyframeEvery === 0 });
+          } catch(e){ encoderError = e; }
+          frame.close();
+          encoded++;
+
+          // Progress
+          if(duration > 0){
+            const pct = Math.min(99, Math.floor((mediaTime / duration) * 100));
+            lbl.textContent = 'ENCODING ' + pct + '%';
+          } else {
+            lbl.textContent = 'ENCODING ' + encoded;
+          }
+
+          // Throttle if encoder is falling behind
+          if(encoder.encodeQueueSize > 8){
+            await new Promise(r => setTimeout(r, 0));
+          }
+
+          v.requestVideoFrameCallback(onFrame);
+        };
+
+        v.addEventListener('ended', finish, {once:true});
+        v.requestVideoFrameCallback(onFrame);
+        try { await v.play(); } catch(e){ console.warn('play failed:', e); finish(); }
+      });
+
+      await finished;
+      v.pause();
+
+      lbl.textContent = 'FINALIZING…';
+      await encoder.flush();
+      muxer.finalize();
+
+      const buffer = muxer.target.buffer;
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gradient-painter-' + vW + 'x' + vH + '-' + Date.now() + '.mp4';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    } catch(err){
+      console.error('WebCodecs export error:', err);
+      alert('Ошибка записи: ' + (err && err.message ? err.message : err));
+    } finally {
+      _recordingActive = false;
+      _recordingVideoTime = null;
+      photos.forEach((pp, i) => { if(typeof origPhotoSizes[i] === 'number') pp.size = origPhotoSizes[i]; });
+      // Restore canvases
+      photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+      animCanvas = origAnimCanvas; animCtx = origAnimCtx;
+      offscreen  = origOffscreen;  offctx  = origOffctx;
+      _skipPhotoLayerSync = false;
+      v.loop = wasLoop;
+      v.muted = wasMuted;
+      try { v.currentTime = 0; await v.play(); } catch(_){}
+      btn.dataset.busy = '';
+      btn.disabled = false;
+      lbl.textContent = origText;
+      updateExportButton();
+      ensureVideoLoop();
+      renderPhotomaker();
+    }
+  }
+
   async function exportFullVideo(p, btn){
     const lbl = document.getElementById('exportVideoLabel');
     const origText = lbl.textContent;
@@ -3231,8 +3482,23 @@
     btn.disabled = true;
 
     const v = p.video;
-    const vW = v.videoWidth || 1280;
-    const vH = v.videoHeight || 720;
+    // Cap recording resolution at 720p (longest side 1280). Per-pixel filters
+    // (Liquid, Smoke, AI Scan, ASCII) are CPU-bound — at 1080p they take
+    // 50-100ms per frame, well below the 33ms budget for 30fps capture, so
+    // MediaRecorder duplicates frames and the file looks like it's stuttering.
+    // 720p halves the pixel work and brings render under the 30fps budget for
+    // most filters, giving smooth playback even on heavy effects.
+    const MAX_REC_DIM = 1280;
+    let vW = v.videoWidth || 1280;
+    let vH = v.videoHeight || 720;
+    {
+      const longest = Math.max(vW, vH);
+      if(longest > MAX_REC_DIM){
+        const k = MAX_REC_DIM / longest;
+        vW = Math.round(vW * k);
+        vH = Math.round(vH * k);
+      }
+    }
 
     // Save originals so we can restore the live display pipeline after recording
     const origPhotoLayer = photoLayer;
@@ -3255,20 +3521,25 @@
     recOffscreen.width  = vW; recOffscreen.height = vH;
     const recOffctx     = recOffscreen.getContext('2d', { alpha: false, willReadFrequently: true });
 
-    // Codec preference: MP4 first. It downloads as a regular file (Chrome
-    // doesn't auto-open .mp4 in an inline viewer the way it does .webm),
-    // and macOS / Windows / mobile all play it natively in QuickTime / Photos /
-    // media players. Fall back to WebM only if MP4 isn't supported.
+    // Codec preference: ask for a specific H.264 profile (avc1.640028 = High
+    // Profile Level 4.0, broadly supported and good for animated content).
+    // Vague 'video/mp4' lets the browser pick anything — Chrome sometimes
+    // chooses a low-quality subprofile that visibly stutters on high motion.
     let mimeType, fileExt;
-    if(MediaRecorder.isTypeSupported('video/mp4')){ mimeType = 'video/mp4'; fileExt = 'mp4'; }
+    if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.640028')){ mimeType = 'video/mp4;codecs=avc1.640028'; fileExt = 'mp4'; }
     else if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')){ mimeType = 'video/mp4;codecs=avc1.42E01E'; fileExt = 'mp4'; }
+    else if(MediaRecorder.isTypeSupported('video/mp4')){ mimeType = 'video/mp4'; fileExt = 'mp4'; }
     else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
     else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')){ mimeType = 'video/webm;codecs=vp8'; fileExt = 'webm'; }
     else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
     else { mimeType = ''; fileExt = 'webm'; }
 
-    // Bitrate scaled to pixel count so 4K videos don't get crushed and 480p don't get bloated
-    const bitrate = Math.max(4_000_000, Math.min(40_000_000, Math.round(vW * vH * 0.15)));
+    // Bitrate: pixels × fps × bits-per-pixel for animation content (~0.12 bpp
+    // is the sweet spot for high-motion procedural animation in H.264).
+    // For 1080p@30 this gives ~7.5 Mbps, well above the previous ~4 Mbps floor
+    // that was crushing fast motion into compression artefacts.
+    const targetFps = 30;
+    const bitrate = Math.max(8_000_000, Math.min(40_000_000, Math.round(vW * vH * targetFps * 0.12)));
 
     // Composite canvas — this is what MediaRecorder captures. We layer the
     // WebGL gradient background here first, then overlay recPhotoLayer (which
@@ -3287,25 +3558,33 @@
     recCompCanvas.style.cssText = 'position:fixed;left:-99999px;top:0;width:1px;height:1px;pointer-events:none;opacity:0';
     document.body.appendChild(recCompCanvas);
 
+    // Fixed-framerate capture. With captureStream(30) the recorder samples the
+    // canvas 30 times per second on its own clock. If our render is slower than
+    // 30fps the same canvas is duplicated — playback stays at constant 30fps
+    // (smooth fps in players) instead of the variable timestamps that
+    // captureStream(0)+requestFrame produces (which players play back as jerky
+    // variable-speed video). Combined with the 1080p resolution cap above, the
+    // render usually keeps up.
     const stream = recCompCanvas.captureStream(30);
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
     const chunks = [];
     recorder.ondataavailable = (e)=> { if(e.data && e.data.size > 0) chunks.push(e.data); };
 
     let renderHandle = null;
-    let useVFC = typeof v.requestVideoFrameCallback === 'function';
     function recordFrame(){
       if(!_recordingActive) return;
+      // Sync animation time to actual video time so Liquid/Smoke/Glitch step
+      // by the video frame interval, not by however long the previous render took.
+      _recordingVideoTime = v.currentTime;
       // 1) Run normal render path: filter + animation → recPhotoLayer
       renderPhotomaker();
       // 2) Composite into recCompCanvas: gradient base (scaled) + overlay
       recCompCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, vW, vH);
       recCompCtx.drawImage(recPhotoLayer, 0, 0);
-      if(useVFC){
-        renderHandle = v.requestVideoFrameCallback(recordFrame);
-      } else {
-        renderHandle = requestAnimationFrame(recordFrame);
-      }
+      // Use plain RAF — captureStream(30) samples on its own clock, so we just
+      // need to keep the canvas as fresh as possible. RAF is consistent across
+      // browsers and won't stall when video buffers, unlike VFC.
+      renderHandle = requestAnimationFrame(recordFrame);
     }
 
     // Scale per-photo size sliders so filter density looks the same in the
@@ -3383,8 +3662,7 @@
       // Let MediaRecorder flush trailing frames before stopping
       await new Promise(r => setTimeout(r, 300));
       _recordingActive = false;
-      if(useVFC && renderHandle != null){ try { v.cancelVideoFrameCallback(renderHandle); } catch(_){} }
-      else if(renderHandle != null){ cancelAnimationFrame(renderHandle); }
+      if(renderHandle != null){ cancelAnimationFrame(renderHandle); }
       recorder.stop();
       await new Promise((r)=> recorder.addEventListener('stop', r, {once:true}));
 
@@ -3406,6 +3684,7 @@
       alert('Ошибка записи видео: ' + (err && err.message ? err.message : err));
     } finally {
       _recordingActive = false;
+      _recordingVideoTime = null;
       // Restore per-photo size sliders (we scaled them up for the higher-res capture)
       photos.forEach((pp, i) => { if(typeof origPhotoSizes[i] === 'number') pp.size = origPhotoSizes[i]; });
       // Remove the off-screen composite canvas from the document
@@ -3431,9 +3710,17 @@
   $('#exportVideo')?.addEventListener('click', async ()=>{
     const btn = $('#exportVideo');
     if(btn.dataset.busy === '1') return;
-    // Mode A: download the source video fully through filter + animation
+    // Mode A: download the source video fully through filter + animation.
+    // Prefer offline WebCodecs export (guaranteed-smooth output). Fall back to
+    // realtime MediaRecorder export only on browsers that lack VideoEncoder
+    // (older Safari/Firefox) — there it'll be jerky but at least produce a file.
     const videoPhoto = photos.find(p => p.isVideo);
     if(videoPhoto){
+      const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+      const hasMuxer = typeof window.Mp4Muxer !== 'undefined' && window.Mp4Muxer.Muxer;
+      if(hasWebCodecs && hasMuxer){
+        return exportFullVideoWebCodecs(videoPhoto, btn);
+      }
       return exportFullVideo(videoPhoto, btn);
     }
     // Mode B (legacy): 5-second synthetic-time animation recording for a photo
@@ -3457,17 +3744,15 @@
         desynchronized: false
       });
       
-      // Try MP4/H264 first, fallback to WebM
-      let mimeType = 'video/webm;codecs=vp9';
-      let fileExt = 'webm';
-      
-      if(MediaRecorder.isTypeSupported('video/mp4')){
-        mimeType = 'video/mp4';
-        fileExt = 'mp4';
-      } else if(MediaRecorder.isTypeSupported('video/webm;codecs=h264')){
-        mimeType = 'video/webm;codecs=h264';
-        fileExt = 'webm';
-      }
+      // Explicit codec preference. Plain 'video/mp4' lets Chrome pick a
+      // subprofile that often produces a broken / unplayable file. Asking for
+      // a concrete H.264 profile string fixes that.
+      let mimeType = '', fileExt = 'webm';
+      if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.640028')){ mimeType = 'video/mp4;codecs=avc1.640028'; fileExt = 'mp4'; }
+      else if(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')){ mimeType = 'video/mp4;codecs=avc1.42E01E'; fileExt = 'mp4'; }
+      else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
+      else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')){ mimeType = 'video/webm;codecs=vp8'; fileExt = 'webm'; }
+      else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
       
       // MediaRecorder setup with high quality
       const stream = captureCanvas.captureStream(30); // 30 fps
@@ -3479,13 +3764,18 @@
       videoChunks = [];
       videoRecorder.ondataavailable = (e)=> { if(e.data && e.data.size>0) videoChunks.push(e.data); };
       videoRecorder.onstop = ()=>{
-        const blob = new Blob(videoChunks, {type: mimeType});
+        // Force download instead of inline open: octet-stream tells Chrome
+        // "binary file, save it" — playable correctness comes from the .mp4
+        // extension which the OS uses to pick a player on double-click.
+        const blob = new Blob(videoChunks, {type: 'application/octet-stream'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `animation-${Date.now()}.${fileExt}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=> URL.revokeObjectURL(url), 2000);
         if(lbl) lbl.textContent = origText;
       };
       
