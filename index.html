@@ -3791,7 +3791,7 @@
     const dl10  = document.getElementById('download10');
     if(dlLbl && dlBtn && dlBtn.dataset.busy !== '1'){
       if(hasVideo){
-        dlLbl.textContent = 'DOWNLOAD VIDEO';
+        dlLbl.textContent = 'DOWNLOAD VIDEO (5S CLIP)';
       } else if(filtersAnimated){
         dlLbl.textContent = 'DOWNLOAD MP4 (5S)';
       } else {
@@ -3800,14 +3800,11 @@
     }
     if(dl10){
       // 10s option: shown when any motion content is present (animated photo
-      // OR video). For video it caps the export at 10s instead of full length.
+      // OR video). Same 5s/10s pair in both cases.
       const showTen = filtersAnimated || hasVideo;
-      if(hasVideo){
-        const d10Lbl = document.getElementById('download10Label');
-        if(d10Lbl) d10Lbl.textContent = 'DOWNLOAD VIDEO (10S CLIP)';
-      } else {
-        const d10Lbl = document.getElementById('download10Label');
-        if(d10Lbl) d10Lbl.textContent = 'DOWNLOAD MP4 (10S)';
+      const d10Lbl = document.getElementById('download10Label');
+      if(d10Lbl){
+        d10Lbl.textContent = hasVideo ? 'DOWNLOAD VIDEO (10S CLIP)' : 'DOWNLOAD MP4 (10S)';
       }
       dl10.style.display = showTen ? 'block' : 'none';
     }
@@ -4696,12 +4693,16 @@
     _manualRecStart = performance.now();
     tick();
 
-    // UI: turn the button into a stop button with running timer
+    // UI: turn the button into a stop button with running timer.
+    // Auto-stop at 15s to avoid runaway recordings and unbounded memory growth.
+    const MANUAL_REC_MAX_MS = 15000;
     const lbl = document.getElementById('manualRecLabel');
-    if(lbl) lbl.textContent = '■ STOP (0.0s)';
+    if(lbl) lbl.textContent = '■ STOP (0.0 / 15s)';
     _manualRecTimer = setInterval(()=>{
-      const sec = ((performance.now() - _manualRecStart) / 1000).toFixed(1);
-      if(lbl) lbl.textContent = '■ STOP (' + sec + 's)';
+      const elapsed = performance.now() - _manualRecStart;
+      const sec = (elapsed / 1000).toFixed(1);
+      if(lbl) lbl.textContent = '■ STOP (' + sec + ' / 15s)';
+      if(elapsed >= MANUAL_REC_MAX_MS) manualRecStop();
     }, 100);
   }
 
