@@ -543,6 +543,10 @@
   let drawing=false; let last=null; let strokeId=1; let brushPx=1.0;
   let rafScheduled = false;
   let svgLoaded = false;
+  // SVG-only filter / size state — used when no photo is loaded but the user
+  // wants to apply a PHOTO STYLE filter to the rendered SVG art. Mirrors the
+  // per-photo fields (p.pattern, p.size, p.detail, p.invert).
+  let svgPattern = 'none', svgSize = 20, svgDetail = 50, svgInvert = false;
   // Animation state for filters
   let filtersAnimated = false;
   let animSpeed = 1;
@@ -1074,13 +1078,20 @@
 
       drawSVGGroups(pathGroups);
 
-      // SVG produces renderable canvas content. Expose the animation panel
-      // and hide the empty-canvas hint. PHOTO STYLE / SIZE / STRENGTH stay
-      // visible but are inert for SVG-only mode (no selected photo to apply
-      // them to). syncAnimControlsForPattern handles SVG-only disable rules.
+      // SVG produces renderable canvas content. Expose the photo style panel
+      // (filters now apply to SVG too) and hide the empty-canvas hint. Push
+      // the SVG-state defaults into the UI controls so the user sees what's
+      // active.
       const section = document.getElementById('photomakerSection');
       if(section) section.classList.remove('hidden');
+      const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = String(v); };
+      setVal('patternSelect', svgPattern);
+      setVal('patternSize', svgSize);
+      setVal('detailLevel', svgDetail);
+      const inv = document.getElementById('invertPattern'); if(inv) inv.checked = !!svgInvert;
+      if(typeof window.refreshSliderReadouts === 'function') window.refreshSliderReadouts();
       if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
+      renderPhotomaker();
       updateExportButton();
       updateEmptyHint();
       
@@ -1640,17 +1651,51 @@
         : (performance.now()-animStart)/1000;
     const t = tSec * Math.max(0.2,animSpeed);
 
-    // SVG-only animation path: no photo loaded, but SVG art is rendered into
-    // the gl gradient canvas. Pipe the gl composite through the animation
-    // effect so the SVG art moves with the chosen mode. Filter modes that
-    // need per-element metadata (shuffle, reveal) are disabled in the UI here.
+    // SVG-only path: no photo loaded, but SVG art is rendered into the gl
+    // gradient canvas. Treat the gl composite as the "photo source" so all
+    // PHOTO STYLE filters and ANIMATION modes apply to it the same way they
+    // would to a photo.
     if(photos.length === 0){
-      if(svgLoaded && filtersAnimated){
+      if(svgLoaded){
         offscreen.width = pw; offscreen.height = ph;
         animCanvas.width = pw; animCanvas.height = ph;
-        animCtx.clearRect(0, 0, pw, ph);
-        animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
-        applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+        const pattern = svgPattern;
+        const size = svgSize;
+        const detail = svgDetail;
+        const invert = svgInvert;
+
+        if(pattern === 'none'){
+          // No filter — if animated, fold gl into animation source; if not,
+          // leave photoLayer empty so the live gl canvas shows through.
+          animCtx.clearRect(0, 0, pw, ph);
+          if(filtersAnimated){
+            animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+            applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+          }
+        } else {
+          // Filter mode: feed the gl composite into offctx as the source
+          // image, run the standard filter pipeline.
+          offctx.fillStyle = '#fff'; offctx.fillRect(0, 0, pw, ph);
+          offctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+          const srcImageData = offctx.getImageData(0, 0, pw, ph);
+          animCtx.clearRect(0, 0, pw, ph);
+
+          if(pattern==='dots') renderDots(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='displace') renderDisplace(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='weave') renderWeave(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='shapes') renderShapes(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='ascii') renderASCII(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='gradient') renderGradient(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
+
+          if(filtersAnimated){
+            applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+          } else {
+            photoCtx.drawImage(animCanvas, 0, 0);
+          }
+        }
       }
       return;
     }
@@ -1761,10 +1806,12 @@
       //  - AI Scan:      disabled for photos (motion detection requires video)
       // For SVG-only content there's no per-photo filter pipeline, so Shuffle /
       // Reveal / AI Scan are disabled — pixel-level modes still work fine.
-      const pat = p ? (p.pattern || 'none') : 'none';
+      // SVG-only mode has its own filter state — reflect it in disable rules
+      // so shuffle / reveal stay disabled only when there's truly no filter,
+      // regardless of whether the source is photo or SVG.
+      const pat = p ? (p.pattern || 'none') : (svgLoaded ? svgPattern : 'none');
       const noFilter = pat === 'none';
       const isVid = !!(p && p.isVideo);
-      const svgOnly = !p && svgLoaded;
       const opts = modeSel.querySelectorAll('option');
       // Append explanation suffix to disabled options so the dropdown
       // explains itself — "Shuffle (needs filter)" reads as "this is greyed
@@ -1775,7 +1822,7 @@
         const base = opt.dataset.baseLabel;
         let disabled = false, suffix = '';
         if(opt.value === 'shuffle' || opt.value === 'reveal'){
-          if(noFilter || svgOnly){ disabled = true; suffix = ' (needs a filter)'; }
+          if(noFilter){ disabled = true; suffix = ' (needs a filter)'; }
         } else if(opt.value === 'aiscan'){
           if(!isVid){ disabled = true; suffix = ' (video only)'; }
         }
@@ -4032,15 +4079,14 @@
   });
 
   $('#patternSelect')?.addEventListener('change', ()=>{
-    const p=getSelectedPhoto();
-    if(!p) return;
+    const p = getSelectedPhoto();
+    const value = $('#patternSelect').value;
+    if(!p && !svgLoaded) return;
     saveState();
-    // Auto-dismiss the position / resize handles when the user moves on to
-    // filter work — otherwise the drag rectangle overlaps the preview and
-    // people think filters aren't applying.
     showPhotoSelection = false; isDraggingPhoto = false; isResizingPhoto = false;
     const photoUi = document.getElementById('photoUi'); if(photoUi) photoUi.style.display = 'none';
-    p.pattern = $('#patternSelect').value;
+    if(p) p.pattern = value;
+    else svgPattern = value;
     syncAnimControlsForPattern();
     renderPhotomaker();
     ensureTickFilters();
@@ -4054,11 +4100,32 @@
   function snapOnFirstInput(id){ if(!_sliderDrag[id]){ _sliderDrag[id] = true; saveState(); } }
   function endSliderDrag(id){ _sliderDrag[id] = false; }
 
-  $('#patternSize')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; snapOnFirstInput('patternSize'); p.size = parseFloat($('#patternSize').value||'20'); renderPhotomaker(); });
+  $('#patternSize')?.addEventListener('input', ()=>{
+    const p = getSelectedPhoto();
+    if(!p && !svgLoaded) return;
+    snapOnFirstInput('patternSize');
+    const v = parseFloat($('#patternSize').value||'20');
+    if(p) p.size = v; else svgSize = v;
+    renderPhotomaker();
+  });
   $('#patternSize')?.addEventListener('change', ()=> endSliderDrag('patternSize'));
-  $('#detailLevel')?.addEventListener('input', ()=>{ const p=getSelectedPhoto(); if(!p) return; snapOnFirstInput('detailLevel'); p.detail = parseFloat($('#detailLevel').value||'50'); renderPhotomaker(); });
+  $('#detailLevel')?.addEventListener('input', ()=>{
+    const p = getSelectedPhoto();
+    if(!p && !svgLoaded) return;
+    snapOnFirstInput('detailLevel');
+    const v = parseFloat($('#detailLevel').value||'50');
+    if(p) p.detail = v; else svgDetail = v;
+    renderPhotomaker();
+  });
   $('#detailLevel')?.addEventListener('change', ()=> endSliderDrag('detailLevel'));
-  $('#invertPattern')?.addEventListener('change', ()=>{ const p=getSelectedPhoto(); if(!p) return; saveState(); p.invert = $('#invertPattern').checked; renderPhotomaker(); });
+  $('#invertPattern')?.addEventListener('change', ()=>{
+    const p = getSelectedPhoto();
+    if(!p && !svgLoaded) return;
+    saveState();
+    const v = $('#invertPattern').checked;
+    if(p) p.invert = v; else svgInvert = v;
+    renderPhotomaker();
+  });
   // Decide what the EXPORT button should do right now:
   //  - If there's a video in photos → "DOWNLOAD VIDEO" (full-length capture)
   //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
