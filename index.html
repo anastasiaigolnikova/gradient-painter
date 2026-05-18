@@ -254,7 +254,6 @@
         <option value="dispersion">Dispersion</option>
         <option value="duotone">Duotone (gradient map)</option>
         <option value="edge">Ink lines (edge detect)</option>
-        <option value="cmyk">CMYK halftone (4-channel)</option>
       </select>
 
       <label class="lab">SIZE<span class="val" id="patternSizeVal">20</span></label>
@@ -1702,7 +1701,6 @@
         else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='cmyk') renderCMYK(animCtx, srcImageData, size, detail, pw, ph, invert);
         
         // Apply universal animation post-processing
         if(filtersAnimated){
@@ -1983,7 +1981,6 @@
       case 'dispersion': renderDispersion(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'duotone':    renderDuotone(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'edge':       renderEdge(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
-      case 'cmyk':       renderCMYK(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       default:
         destCtx.drawImage(sourceCanvas, 0, 0);
         return;
@@ -3915,55 +3912,6 @@
       }
     }
     ctx.putImageData(out, 0, 0);
-  }
-
-  // CMYK halftone: classic newsprint look. Same dot algorithm as renderDots
-  // but split across four channels — Cyan / Magenta / Yellow / Black — each
-  // on a different grid angle (15° / 75° / 0° / 45°) per print convention.
-  // 'multiply' composite makes overlapping dots darken correctly.
-  // SIZE = dot grid spacing, STRENGTH = dot size amplifier (denser fill).
-  function renderCMYK(ctx, imgData, size, detail, w, h, invert){
-    const data = imgData.data;
-    const step = Math.max(4, size);
-    const detailFactor = (detail - 10) / 80;
-    const sizeAmp = 0.5 + detailFactor * 1.5; // 0.5..2.0
-    const channels = [
-      { angle:  15 * Math.PI / 180, fill: 'rgba(0,180,210,0.85)',  pick: (r,g,b,k)=> k>=1 ? 0 : (1 - r/255 - k) / (1 - k) },
-      { angle:  75 * Math.PI / 180, fill: 'rgba(220,45,165,0.85)', pick: (r,g,b,k)=> k>=1 ? 0 : (1 - g/255 - k) / (1 - k) },
-      { angle:   0,                  fill: 'rgba(235,225,40,0.9)', pick: (r,g,b,k)=> k>=1 ? 0 : (1 - b/255 - k) / (1 - k) },
-      { angle:  45 * Math.PI / 180, fill: 'rgba(0,0,0,0.9)',       pick: (r,g,b,k)=> k }
-    ];
-    const diag = Math.sqrt(w*w + h*h);
-    const margin = step * 2;
-    const prevComp = ctx.globalCompositeOperation;
-    ctx.globalCompositeOperation = 'multiply';
-    for(let c = 0; c < channels.length; c++){
-      const ch = channels[c];
-      const cosA = Math.cos(ch.angle), sinA = Math.sin(ch.angle);
-      ctx.fillStyle = ch.fill;
-      for(let gy = -margin; gy < diag + margin; gy += step){
-        for(let gx = -margin; gx < diag + margin; gx += step){
-          // Rotated-grid point → canvas coords
-          const dx = gx - diag/2, dy = gy - diag/2;
-          const cx = dx*cosA - dy*sinA + w/2;
-          const cy = dx*sinA + dy*cosA + h/2;
-          if(cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
-          const i = ((cy|0)*w + (cx|0)) * 4;
-          const r = data[i], g = data[i+1], b = data[i+2];
-          if(r >= 250 && g >= 250 && b >= 250) continue; // skip letterbox
-          const K = 1 - Math.max(r, g, b) / 255;
-          let v = ch.pick(r, g, b, K);
-          if(invert) v = 1 - v;
-          if(v <= 0.02) continue;
-          const dotR = step * 0.46 * sizeAmp * Math.sqrt(v);
-          if(dotR < 0.5) continue;
-          ctx.beginPath();
-          ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    ctx.globalCompositeOperation = prevComp;
   }
 
   // Event handlers
