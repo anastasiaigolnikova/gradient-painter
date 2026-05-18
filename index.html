@@ -1676,8 +1676,15 @@
       const invert = !!p.invert;
       
       if(pattern === 'none'){
-        // Render plain photo to intermediate canvas so animation can be applied on top
+        // Render plain photo to intermediate canvas so animation can be applied on top.
         animCtx.clearRect(0,0,pw,ph);
+        // When animating with SVG art on the gl layer, fold the gradient+SVG
+        // composite into the animation source so it moves together with the
+        // photo — otherwise SVG sits static underneath while only the photo
+        // animates, which reads as broken.
+        if(filtersAnimated && svgLoaded){
+          animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        }
         animCtx.drawImage(src, x, y, w, h);
         if(filtersAnimated){
           applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
@@ -1687,6 +1694,11 @@
       } else {
         // Render filter to intermediate canvas WITHOUT animation
         animCtx.clearRect(0,0,pw,ph);
+        // Same trick for filter modes: pre-paint gradient+SVG into animCanvas
+        // so the chosen animation moves the SVG along with the filter output.
+        if(filtersAnimated && svgLoaded){
+          animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        }
         offctx.fillStyle = '#fff'; offctx.fillRect(0,0,pw,ph);
         offctx.drawImage(src, x, y, w, h);
     const srcImageData = offctx.getImageData(0,0,pw,ph);
