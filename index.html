@@ -4010,17 +4010,21 @@
   // Haze (light streak veil): vertical motion-blurred copy of the photo
   // mixed over the original with a vertical-gradient mask, so part of the
   // image stays sharp and part dissolves into elongated light trails — the
-  // cinematic "veil of light" / vertical-dissolve look. Warm cast added to
-  // the hazy region for the golden ambient feel from the references.
-  // SIZE → streak length (4..120 px). STRENGTH → haze density (subtle to
-  // heavy fog). INVERT → haze on top half instead of bottom half.
+  // cinematic "veil of light" / vertical-dissolve look. Warm boost on the
+  // hazy region gives it the golden ambient feel from the references.
+  // SIZE → streak length (default ~60 px, max ~300 px — much more dramatic
+  //        than the previous version)
+  // STRENGTH → haze density (subtle veil to heavy fog)
+  // INVERT → haze on top half instead of bottom half
   function renderHaze(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
-    const streak = Math.max(4, Math.floor(size * 1.2));
+    // Streak scales with image height so 1080p shots get the same proportional
+    // dreamy reach as 720p. Default size=20 → streak ≈ 6 % of image height.
+    const streak = Math.max(20, Math.floor(size * 0.03 * h + size * 1.5));
     const detailFactor = (detail - 10) / 80; // 0..1
-    const density = 0.3 + detailFactor * 0.65; // 0.3..0.95
+    const density = 0.5 + detailFactor * 0.45; // 0.5..0.95
 
     // Vertical box blur via sliding window — O(w·h) regardless of streak length.
     // Per column: accumulate sum over a 2·streak+1 window, slide down the image.
@@ -4056,26 +4060,28 @@
 
     // Mix original + haze using a vertical mask. Bottom hazy by default
     // (light dissolves the lower body); INVERT puts haze on top instead.
+    // Boost the haze toward warm white for a clear glowing-streak look —
+    // without this the effect just reads as "slightly blurry" instead of
+    // "veil of light".
     for(let y = 0; y < h; y++){
       let m = y / Math.max(1, h - 1);
       if(invert) m = 1 - m;
       m = m * m; // ease-in
       const mix = m * density;
       const inv = 1 - mix;
-      // Warm cast — subtle amber tint on the hazy portion only
-      const warmR = 22 * mix;
-      const warmG = 10 * mix;
-      const warmB = -8 * mix;
       for(let x = 0; x < w; x++){
         const i = (y * w + x) * 4;
-        // Skip true-transparent pixels — keep them transparent
         if(data[i + 3] === 0){ out[i + 3] = 0; continue; }
-        let r = data[i]     * inv + haze[i]     * mix + warmR;
-        let g = data[i + 1] * inv + haze[i + 1] * mix + warmG;
-        let b = data[i + 2] * inv + haze[i + 2] * mix + warmB;
-        if(r < 0) r = 0; else if(r > 255) r = 255;
-        if(g < 0) g = 0; else if(g > 255) g = 255;
-        if(b < 0) b = 0; else if(b > 255) b = 255;
+        // Brighten + warm-tint the haze contribution (not the original)
+        const hr = Math.min(255, haze[i]     * 1.30 + 40);
+        const hg = Math.min(255, haze[i + 1] * 1.20 + 28);
+        const hb = Math.min(255, haze[i + 2] * 1.05 + 8);
+        let r = data[i]     * inv + hr * mix;
+        let g = data[i + 1] * inv + hg * mix;
+        let b = data[i + 2] * inv + hb * mix;
+        if(r > 255) r = 255;
+        if(g > 255) g = 255;
+        if(b > 255) b = 255;
         out[i]     = r;
         out[i + 1] = g;
         out[i + 2] = b;
@@ -4150,45 +4156,42 @@
     ctx.globalAlpha = 1;
   }
 
-  // Edge stretch (liquid border): pixels near the edges get TRAILS extending
-  // toward the frame edge (image content smeared outward like melted chrome).
-  // Centre stays untouched. Inverse sampling: a target pixel near the edge
-  // pulls colour from a point CLOSER to the centre, so inner content gets
-  // visually stretched along the radial direction.
-  // SIZE → maximum stretch distance (5..150 px)
-  // STRENGTH → falloff curve (higher = smaller safe zone, deeper stretch reach)
-  // INVERT → pull edge content INTO the centre instead of outward
+  // Edge stretch (liquid border): one-sided horizontal taffy-pull. Pixels on
+  // one side of centre get smeared toward that edge of the frame, like the
+  // melted-chrome model reference. Centre face stays sharp; the further the
+  // pixel from centre, the longer the trail.
+  // SIZE → max stretch distance as fraction of image width (default = 30 %,
+  //        max = 150 %). Very visible even at low settings.
+  // STRENGTH → where the stretch begins. Low = stretch starts at right edge
+  //            (subtle), high = stretch starts near centre (whole right half
+  //            melts).
+  // INVERT → stretch toward the left edge instead of right
   function renderEdgeStretch(ctx, w, h, size, detail, invert){
-    const imgData = ctx.getImageData(0, 0, w, h);
-    const data = imgData.data;
+    const data = ctx.getImageData(0, 0, w, h).data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
     out.fill(0);
     const detailFactor = (detail - 10) / 80;
-    const safeZone = 0.65 - detailFactor * 0.45; // 0.20..0.65 of half-diagonal
-    const maxStretch = size * 1.5;
-    // Default: source is CLOSER to centre (sampleSign = -1) → outer pixels
-    // borrow from inner content → content stretches outward toward the edge.
-    // Invert flips it.
-    const sampleSign = invert ? +1 : -1;
-    const cx = w / 2, cy = h / 2;
-    const maxDist = Math.sqrt(cx * cx + cy * cy);
+    // safeZone in normalised x (-1..+1). Higher STRENGTH → lower safeZone →
+    // stretch covers more of the frame.
+    const safeZone = 0.6 - detailFactor * 0.8; // 0.6 → -0.2
+    const maxStretchPx = (size / 100) * 1.5 * w; // up to 1.5× width
+    const dir = invert ? -1 : 1;
     for(let y = 0; y < h; y++){
       for(let x = 0; x < w; x++){
         const di = (y * w + x) * 4;
-        const dx = (x - cx) / maxDist;
-        const dy = (y - cy) / maxDist;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const xNorm = (x - w / 2) * 2 / w; // -1..+1
+        const sideX = xNorm * dir;          // positive on the stretching side
         let falloff = 0;
-        if(dist > safeZone){
-          falloff = (dist - safeZone) / Math.max(0.001, 1 - safeZone);
+        if(sideX > safeZone){
+          falloff = (sideX - safeZone) / Math.max(0.001, 1 - safeZone);
           falloff = falloff * falloff; // ease-in
         }
-        const stretchAmt = falloff * maxStretch * sampleSign;
-        const angle = Math.atan2(dy, dx);
-        const sx = Math.max(0, Math.min(w - 1, (x + Math.cos(angle) * stretchAmt) | 0));
-        const sy = Math.max(0, Math.min(h - 1, (y + Math.sin(angle) * stretchAmt) | 0));
-        const si = (sy * w + sx) * 4;
+        const stretchPx = falloff * maxStretchPx;
+        // Pull colour from a position CLOSER to centre → image content
+        // gets visually stretched toward the active edge.
+        const sx = Math.max(0, Math.min(w - 1, (x - dir * stretchPx) | 0));
+        const si = (y * w + sx) * 4;
         out[di]     = data[si];
         out[di + 1] = data[si + 1];
         out[di + 2] = data[si + 2];
