@@ -256,6 +256,7 @@
         <option value="edge">Ink lines (edge detect)</option>
         <option value="echo">Echo (multiply)</option>
         <option value="edgeStretch">Edge stretch (liquid border)</option>
+        <option value="haze">Haze (light streak veil)</option>
       </select>
 
       <label class="lab">SIZE<span class="val" id="patternSizeVal">20</span></label>
@@ -1691,6 +1692,7 @@
           else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='haze') renderHaze(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='echo'){
             // For SVG, source bitmap is the gl canvas itself, placed fullsize
             animCtx.clearRect(0, 0, pw, ph);
@@ -1788,6 +1790,7 @@
         else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
+        else if(pattern==='haze') renderHaze(animCtx, srcImageData, size, detail, pw, ph, invert);
         
         // Apply universal animation post-processing
         if(filtersAnimated){
@@ -2070,6 +2073,7 @@
       case 'dispersion': renderDispersion(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'duotone':    renderDuotone(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'edge':       renderEdge(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
+      case 'haze':       renderHaze(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       default:
         destCtx.drawImage(sourceCanvas, 0, 0);
         return;
@@ -4001,6 +4005,84 @@
       }
     }
     ctx.putImageData(out, 0, 0);
+  }
+
+  // Haze (light streak veil): vertical motion-blurred copy of the photo
+  // mixed over the original with a vertical-gradient mask, so part of the
+  // image stays sharp and part dissolves into elongated light trails — the
+  // cinematic "veil of light" / vertical-dissolve look. Warm cast added to
+  // the hazy region for the golden ambient feel from the references.
+  // SIZE → streak length (4..120 px). STRENGTH → haze density (subtle to
+  // heavy fog). INVERT → haze on top half instead of bottom half.
+  function renderHaze(ctx, imgData, size, detail, w, h, invert){
+    const data = imgData.data;
+    const buf = _pxBuffers(w, h);
+    const out = buf.out;
+    const streak = Math.max(4, Math.floor(size * 1.2));
+    const detailFactor = (detail - 10) / 80; // 0..1
+    const density = 0.3 + detailFactor * 0.65; // 0.3..0.95
+
+    // Vertical box blur via sliding window — O(w·h) regardless of streak length.
+    // Per column: accumulate sum over a 2·streak+1 window, slide down the image.
+    const haze = new Uint8ClampedArray(data.length);
+    for(let x = 0; x < w; x++){
+      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      for(let y = 0; y < Math.min(streak, h); y++){
+        const i = (y * w + x) * 4;
+        sumR += data[i]; sumG += data[i+1]; sumB += data[i+2];
+        count++;
+      }
+      for(let y = 0; y < h; y++){
+        const add = y + streak;
+        if(add < h){
+          const ai = (add * w + x) * 4;
+          sumR += data[ai]; sumG += data[ai+1]; sumB += data[ai+2];
+          count++;
+        }
+        const rem = y - streak - 1;
+        if(rem >= 0){
+          const ri = (rem * w + x) * 4;
+          sumR -= data[ri]; sumG -= data[ri+1]; sumB -= data[ri+2];
+          count--;
+        }
+        const di = (y * w + x) * 4;
+        const c = count > 0 ? count : 1;
+        haze[di]     = sumR / c;
+        haze[di + 1] = sumG / c;
+        haze[di + 2] = sumB / c;
+        haze[di + 3] = data[di + 3];
+      }
+    }
+
+    // Mix original + haze using a vertical mask. Bottom hazy by default
+    // (light dissolves the lower body); INVERT puts haze on top instead.
+    for(let y = 0; y < h; y++){
+      let m = y / Math.max(1, h - 1);
+      if(invert) m = 1 - m;
+      m = m * m; // ease-in
+      const mix = m * density;
+      const inv = 1 - mix;
+      // Warm cast — subtle amber tint on the hazy portion only
+      const warmR = 22 * mix;
+      const warmG = 10 * mix;
+      const warmB = -8 * mix;
+      for(let x = 0; x < w; x++){
+        const i = (y * w + x) * 4;
+        // Skip true-transparent pixels — keep them transparent
+        if(data[i + 3] === 0){ out[i + 3] = 0; continue; }
+        let r = data[i]     * inv + haze[i]     * mix + warmR;
+        let g = data[i + 1] * inv + haze[i + 1] * mix + warmG;
+        let b = data[i + 2] * inv + haze[i + 2] * mix + warmB;
+        if(r < 0) r = 0; else if(r > 255) r = 255;
+        if(g < 0) g = 0; else if(g > 255) g = 255;
+        if(b < 0) b = 0; else if(b > 255) b = 255;
+        out[i]     = r;
+        out[i + 1] = g;
+        out[i + 2] = b;
+        out[i + 3] = data[i + 3];
+      }
+    }
+    ctx.putImageData(buf.img, 0, 0);
   }
 
   // Echo (multiply): stamp N copies of the source bitmap onto ctx with a
