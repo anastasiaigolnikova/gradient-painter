@@ -4410,19 +4410,15 @@
     const out = buf.out;
     out.fill(0);
     const detailFactor = (detail - 10) / 80;
-    // Safe zone is CAPPED at 0 so the left half (face area) can never get
-    // distorted — STRENGTH only controls how much of the right half melts.
-    // detail=10 → safeZone 0.6 (only right 20% melts)
-    // detail=50 → safeZone 0.25 (right 37% melts)
-    // detail=90 → safeZone 0 (the whole right half melts, left untouched)
+    // safeZone capped at 0 so left half never distorts.
     const safeZone = Math.max(0, 0.6 - detailFactor * 0.7);
-    const maxStretchPx = (size / 100) * 2.0 * w; // up to 2× width for chrome reach
+    const maxStretchPx = (size / 100) * 2.0 * w;
     const dir = invert ? -1 : 1;
     const n2 = _simplex.noise2D;
+    // Linear falloff (no squaring) so the strand reach near the safe zone
+    // boundary is meaningful — squared falloff made the first ~30 % of the
+    // stretch region barely move, leaving a useless transition.
     for(let y = 0; y < h; y++){
-      // Per-row flow strength — clusters of stronger / weaker pull (the
-      // "islands" feel) but consistent ALONG each strand so ribbons stay
-      // continuous from start to end.
       const rowFlow = 0.6 + 0.4 * n2(y * 0.005, 200);
       for(let x = 0; x < w; x++){
         const di = (y * w + x) * 4;
@@ -4431,23 +4427,32 @@
         let falloff = 0;
         if(sideX > safeZone){
           falloff = (sideX - safeZone) / Math.max(0.001, 1 - safeZone);
-          falloff = falloff * falloff;
         }
-        // No per-pixel length jitter — strands stay coherent along their
-        // length, just rowFlow varies the AMPLITUDE per row.
         const stretchPx = falloff * maxStretchPx * rowFlow;
-        // Low-frequency wobble (longer, smoother undulation) instead of
-        // high-frequency jitter — gives flowing chrome-ribbon curves rather
-        // than zigzag noise. The (y) freq is much lower than the (x) freq so
-        // each strand keeps a consistent curl direction rather than jumping.
         const wobble = n2(x * 0.0012, y * 0.006) * stretchPx * 0.55;
         const sx = Math.max(0, Math.min(w - 1, (x - dir * stretchPx) | 0));
         const sy = Math.max(0, Math.min(h - 1, (y + wobble) | 0));
         const si = (sy * w + sx) * 4;
-        out[di]     = data[si];
-        out[di + 1] = data[si + 1];
-        out[di + 2] = data[si + 2];
-        out[di + 3] = data[si + 3];
+        const sr = data[si], sg = data[si + 1], sb = data[si + 2], sa = data[si + 3];
+
+        // Subject-aware: if we're STRETCHING (falloff > small threshold) and
+        // we'd sample a background pixel (transparent, or near-white photo
+        // letterbox) — output transparent so the gradient layer underneath
+        // shows through the strand gaps. Only SUBJECT pixels (non-white,
+        // non-transparent) flow into the strand region.
+        // For pixels in the safe zone (falloff ≈ 0), pass through unchanged.
+        if(falloff > 0.02){
+          const isBg = sa < 30 || (sr > 240 && sg > 240 && sb > 240);
+          if(isBg){
+            // Sample was background — leave this pixel transparent
+            out[di] = 0; out[di + 1] = 0; out[di + 2] = 0; out[di + 3] = 0;
+            continue;
+          }
+        }
+        out[di]     = sr;
+        out[di + 1] = sg;
+        out[di + 2] = sb;
+        out[di + 3] = sa;
       }
     }
     ctx.putImageData(buf.img, 0, 0);
