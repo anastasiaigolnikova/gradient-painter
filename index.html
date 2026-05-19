@@ -254,6 +254,8 @@
         <option value="dispersion">Dispersion</option>
         <option value="duotone">Duotone (gradient map)</option>
         <option value="edge">Ink lines (edge detect)</option>
+        <option value="echo">Echo (multiply)</option>
+        <option value="edgeStretch">Edge stretch (liquid border)</option>
       </select>
 
       <label class="lab">SIZE<span class="val" id="patternSizeVal">20</span></label>
@@ -1689,6 +1691,15 @@
           else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
+          else if(pattern==='echo'){
+            // For SVG, source bitmap is the gl canvas itself, placed fullsize
+            animCtx.clearRect(0, 0, pw, ph);
+            renderEcho(animCtx, canvas, 0, 0, pw, ph, size, detail, invert, pw, ph);
+          } else if(pattern==='edgeStretch'){
+            animCtx.clearRect(0, 0, pw, ph);
+            animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+            renderEdgeStretch(animCtx, pw, ph, size, detail, invert);
+          }
 
           if(filtersAnimated){
             applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
@@ -1731,6 +1742,25 @@
           animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
         }
         animCtx.drawImage(src, x, y, w, h);
+        if(filtersAnimated){
+          applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
+        } else {
+          photoCtx.drawImage(animCanvas, 0, 0);
+        }
+      } else if(pattern === 'echo' || pattern === 'edgeStretch'){
+        // Compositional filters — work on the photo bitmap with transparency,
+        // not the white-bg offscreen pixel buffer the other filters use.
+        animCtx.clearRect(0, 0, pw, ph);
+        if(filtersAnimated && svgLoaded){
+          animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        }
+        if(pattern === 'echo'){
+          renderEcho(animCtx, src, x, y, w, h, size, detail, invert, pw, ph);
+        } else {
+          // Draw photo at its placed position, then warp its edges in place
+          animCtx.drawImage(src, x, y, w, h);
+          renderEdgeStretch(animCtx, pw, ph, size, detail, invert);
+        }
         if(filtersAnimated){
           applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
         } else {
@@ -3971,6 +4001,85 @@
       }
     }
     ctx.putImageData(out, 0, 0);
+  }
+
+  // Echo (multiply): stamp N copies of the source bitmap onto ctx with a
+  // horizontal offset and optional fake 3D-rotation around the vertical axis.
+  // SIZE  → number of copies (3..14)
+  // STRENGTH → rotation per step around Y-axis (0 = pure horizontal echo,
+  //            high = spiral / receding into perspective like image 1)
+  // INVERT → mirror echo direction (right → left)
+  // Drawn back-to-front so foreground copies occlude receding ones.
+  function renderEcho(ctx, src, srcX, srcY, srcW, srcH, size, detail, invert, pw, ph){
+    const count = Math.max(3, Math.min(14, Math.round((size - 3) / 97 * 11) + 3));
+    const detailFactor = (detail - 10) / 80; // 0..1
+    const dir = invert ? -1 : 1;
+    // Horizontal step distance scales with photo width and slightly with STRENGTH
+    const stepDist = srcW * 0.18 * (0.55 + detailFactor * 0.9);
+    // Fake Y-axis rotation per step → X-compression (perspective receding)
+    const stepRotY = detailFactor * 0.45;
+    const cx = srcX + srcW * 0.5;
+    const cy = srcY + srcH * 0.5;
+    for(let i = count - 1; i >= 0; i--){
+      const t = count > 1 ? i / (count - 1) : 0; // 0=front, 1=back
+      const dx = dir * i * stepDist;
+      const alpha = 1 - t * 0.55;
+      const scale = 1 - t * 0.22;
+      const rotY = stepRotY * i;
+      const xCompress = Math.max(0.08, Math.cos(rotY));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx + dx, cy);
+      ctx.scale(scale * xCompress, scale);
+      ctx.drawImage(src, -srcW * 0.5, -srcH * 0.5, srcW, srcH);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Edge stretch (liquid border): displaces pixels radially outward from
+  // centre, with the displacement amount ramping up from 0 in a safe inner
+  // zone to a maximum at the corners. Centre stays clean, edges smear.
+  // SIZE → maximum stretch distance (5..150 px)
+  // STRENGTH → falloff start (higher = smaller safe zone, more stretch reach)
+  // INVERT → pull inward instead of pushing outward
+  function renderEdgeStretch(ctx, w, h, size, detail, invert){
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const buf = _pxBuffers(w, h);
+    const out = buf.out;
+    // Reset output to fully transparent — the displacement loop writes to it
+    out.fill(0);
+    const detailFactor = (detail - 10) / 80;
+    const safeZone = 0.65 - detailFactor * 0.45; // 0.20..0.65 of half-diagonal
+    const maxStretch = size * 1.5; // ~5..150 px
+    const dirSign = invert ? -1 : 1;
+    const cx = w / 2, cy = h / 2;
+    const maxDist = Math.sqrt(cx * cx + cy * cy);
+    for(let y = 0; y < h; y++){
+      for(let x = 0; x < w; x++){
+        const di = (y * w + x) * 4;
+        const dx = (x - cx) / maxDist;
+        const dy = (y - cy) / maxDist;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        let falloff = 0;
+        if(dist > safeZone){
+          falloff = (dist - safeZone) / Math.max(0.001, 1 - safeZone);
+          falloff = falloff * falloff; // ease-in
+        }
+        const stretchAmt = falloff * maxStretch * dirSign;
+        // Radial direction: pull pixel from a position further out (or in)
+        const angle = Math.atan2(dy, dx);
+        const sx = Math.max(0, Math.min(w - 1, (x + Math.cos(angle) * stretchAmt) | 0));
+        const sy = Math.max(0, Math.min(h - 1, (y + Math.sin(angle) * stretchAmt) | 0));
+        const si = (sy * w + sx) * 4;
+        out[di]     = data[si];
+        out[di + 1] = data[si + 1];
+        out[di + 2] = data[si + 2];
+        out[di + 3] = data[si + 3];
+      }
+    }
+    ctx.putImageData(buf.img, 0, 0);
   }
 
   // Event handlers
