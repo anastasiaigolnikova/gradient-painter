@@ -949,24 +949,102 @@
       return;
     }
 
-    // Otherwise: classic static PNG snapshot.
-    const tmp = document.createElement('canvas');
-    tmp.width = canvas.width;
-    tmp.height = canvas.height;
-    const tmpCtx = tmp.getContext('2d');
-    tmpCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, tmp.width, tmp.height);
-    if(photoLayer && photoLayer.width && photoLayer.height){
-      tmpCtx.drawImage(photoLayer, 0, 0, photoLayer.width, photoLayer.height, 0, 0, tmp.width, tmp.height);
-    }
-    tmp.toBlob((blob)=>{
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'gradient-brush-' + Date.now() + '.png';
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    // Otherwise: high-resolution PNG snapshot.
+    // Was saving at display × DPI (often ~1500 px wide). Now: re-render the
+    // photomaker at up to 3840 px longest side so the saved PNG is print /
+    // poster quality regardless of the user's display.
+    exportHighResPNG();
   };
+
+  // High-res PNG export. Temporarily swaps photoLayer/animCanvas/offscreen
+  // for HiDPI versions, scales per-photo SIZE so filter density matches
+  // the on-screen look, renders one frame, composites gl-gradient + filter,
+  // saves as PNG. Same swap-and-restore pattern as the WebCodecs video
+  // export — keeps the live display state intact.
+  async function exportHighResPNG(){
+    // Pick a target resolution: aim for the largest of (display × 2, photo
+    // native), capped at 3840 longest side. Aspect ratio matches the
+    // current canvas so filters / composition look identical, just sharper.
+    const dispW = photoLayer.width, dispH = photoLayer.height;
+    if(!dispW || !dispH){
+      alert('Сначала загрузи фото / видео / SVG');
+      return;
+    }
+    let nativeW = 0, nativeH = 0;
+    for(const p of photos){
+      const s = getPhotoSize(p);
+      if(s.w > nativeW) nativeW = s.w;
+      if(s.h > nativeH) nativeH = s.h;
+    }
+    const aspect = dispW / dispH;
+    let targetW = Math.max(dispW * 2, nativeW * 1.2);
+    let targetH = Math.max(dispH * 2, nativeH * 1.2);
+    // Force aspect-ratio of canvas so composite layout matches preview
+    if(targetW / targetH > aspect) targetW = Math.round(targetH * aspect);
+    else targetH = Math.round(targetW / aspect);
+    const MAX = 3840;
+    const longest = Math.max(targetW, targetH);
+    if(longest > MAX){
+      const k = MAX / longest;
+      targetW = Math.round(targetW * k);
+      targetH = Math.round(targetH * k);
+    }
+
+    // Save live-display state
+    const origPhotoLayer = photoLayer, origPhotoCtx = photoCtx;
+    const origAnim = animCanvas, origAnimCtx = animCtx;
+    const origOff = offscreen, origOffctx = offctx;
+    const origSizes = photos.map(p => p.size);
+    const origSkipSync = _skipPhotoLayerSync;
+
+    // Hi-res replacements
+    photoLayer = document.createElement('canvas');
+    photoLayer.width = targetW; photoLayer.height = targetH;
+    photoCtx = photoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
+    animCanvas = document.createElement('canvas');
+    animCanvas.width = targetW; animCanvas.height = targetH;
+    animCtx = animCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+    offscreen = document.createElement('canvas');
+    offscreen.width = targetW; offscreen.height = targetH;
+    offctx = offscreen.getContext('2d', { alpha: false, willReadFrequently: true });
+
+    // Scale per-photo filter SIZE so dot / line / ascii density looks the
+    // same as on screen, not 2× tinier on the bigger canvas.
+    const sizeScale = Math.max(targetW / dispW, targetH / dispH);
+    photos.forEach(p => { if(typeof p.size === 'number') p.size = p.size * sizeScale; });
+
+    _skipPhotoLayerSync = true;
+    try {
+      renderPhotomaker();
+
+      // Composite gl-gradient (scale up from display size with bilinear) +
+      // hi-res photo layer into a final canvas, encode as PNG.
+      const comp = document.createElement('canvas');
+      comp.width = targetW; comp.height = targetH;
+      const cctx = comp.getContext('2d', { alpha: false });
+      cctx.imageSmoothingEnabled = true;
+      cctx.imageSmoothingQuality = 'high';
+      cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, targetW, targetH);
+      cctx.drawImage(photoLayer, 0, 0);
+      await new Promise((res)=> comp.toBlob((blob)=>{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'gradient-painter-' + targetW + 'x' + targetH + '-' + Date.now() + '.png';
+        a.rel = 'noopener'; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=> URL.revokeObjectURL(url), 2000);
+        res();
+      }, 'image/png'));
+    } finally {
+      photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+      photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+      animCanvas = origAnim; animCtx = origAnimCtx;
+      offscreen = origOff; offctx = origOffctx;
+      _skipPhotoLayerSync = origSkipSync;
+      renderPhotomaker();
+    }
+  }
 
   $('#svgInput').onchange = (e) => {
     const file = e.target.files[0];
@@ -4584,7 +4662,10 @@
     const v = p.video;
     const fps = 30;
     // Higher resolution is fine here — no realtime budget to hit
-    const MAX_REC_DIM = 1920;
+    // Cap at 2560 longest side (was 1920) — modern H.264 High Profile and
+    // every desktop browser handle this fine, gives crisp 1440p-equivalent
+    // output instead of 1080p.
+    const MAX_REC_DIM = 2560;
     let vW = v.videoWidth || 1280;
     let vH = v.videoHeight || 720;
     {
@@ -4890,7 +4971,11 @@
     // MediaRecorder duplicates frames and the file looks like it's stuttering.
     // 720p halves the pixel work and brings render under the 30fps budget for
     // most filters, giving smooth playback even on heavy effects.
-    const MAX_REC_DIM = 1280;
+    // MediaRecorder fallback runs in realtime — at 2560 per-frame budget
+    // becomes 4× heavier than 1280 and CPU-bound filters fall behind 30 fps,
+    // so MediaRecorder duplicates frames and the file stutters. 1920 is the
+    // sweet spot: visibly sharper than 1280, still fits the realtime budget.
+    const MAX_REC_DIM = 1920;
     let vW = v.videoWidth || 1280;
     let vH = v.videoHeight || 720;
     {
@@ -5146,11 +5231,59 @@
     btn.dataset.busy = '1';
     btn.disabled = true;
 
+    // Pick a hi-res target so the exported MP4 isn't capped at the user's
+    // display resolution. 2× display, biased toward photo native, capped at
+    // 2560 longest side (MediaRecorder realtime budget).
+    const dispW = photoLayer.width, dispH = photoLayer.height;
+    let nativeW = 0, nativeH = 0;
+    for(const p of photos){
+      const s = getPhotoSize(p);
+      if(s.w > nativeW) nativeW = s.w;
+      if(s.h > nativeH) nativeH = s.h;
+    }
+    let pw = Math.max(dispW * 2, nativeW);
+    let ph = Math.max(dispH * 2, nativeH);
+    const aspect = dispW / Math.max(1, dispH);
+    if(pw / ph > aspect) pw = Math.round(ph * aspect);
+    else ph = Math.round(pw / aspect);
+    const MAX_REC_LOOP = 2560;
+    const longestLoop = Math.max(pw, ph);
+    if(longestLoop > MAX_REC_LOOP){
+      const k = MAX_REC_LOOP / longestLoop;
+      pw = Math.round(pw * k);
+      ph = Math.round(ph * k);
+    }
+
+    // Swap photoLayer / animCanvas / offscreen to hi-res — same pattern the
+    // WebCodecs video export uses. Render pipeline rewrites itself at the
+    // bigger size for the duration of the recording.
+    const origPhotoLayer = photoLayer, origPhotoCtx = photoCtx;
+    const origAnim = animCanvas, origAnimCtx = animCtx;
+    const origOff = offscreen, origOffctx = offctx;
+    const origSizes = photos.map(p => p.size);
+    const origSkipSync = _skipPhotoLayerSync;
+
+    const hiPhotoLayer = document.createElement('canvas');
+    hiPhotoLayer.width = pw; hiPhotoLayer.height = ph;
+    const hiPhotoCtx = hiPhotoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
+    const hiAnim = document.createElement('canvas');
+    hiAnim.width = pw; hiAnim.height = ph;
+    const hiAnimCtx = hiAnim.getContext('2d', { alpha: true, willReadFrequently: true });
+    const hiOff = document.createElement('canvas');
+    hiOff.width = pw; hiOff.height = ph;
+    const hiOffctx = hiOff.getContext('2d', { alpha: false, willReadFrequently: true });
+
+    photoLayer = hiPhotoLayer; photoCtx = hiPhotoCtx;
+    animCanvas = hiAnim; animCtx = hiAnimCtx;
+    offscreen = hiOff; offctx = hiOffctx;
+    const sizeScale = Math.max(pw / dispW, ph / dispH);
+    photos.forEach(p => { if(typeof p.size === 'number') p.size = p.size * sizeScale; });
+    _skipPhotoLayerSync = true;
+
     try {
-      // Create a temporary canvas to capture the composite (WebGL + photo layer)
+      // Capture canvas at hi-res. Composite (gradient + filter) renders into
+      // this each frame and MediaRecorder samples on requestFrame().
       const captureCanvas = document.createElement('canvas');
-      const pw = photoLayer.width, ph = photoLayer.height;
-      // Use display resolution (higher quality)
       captureCanvas.width = pw;
       captureCanvas.height = ph;
       const captureCtx = captureCanvas.getContext('2d', {
@@ -5184,15 +5317,21 @@
       
       videoChunks = [];
       videoRecorder.ondataavailable = (e)=> { if(e.data && e.data.size>0) videoChunks.push(e.data); };
+      const restoreCanvases = ()=>{
+        // Restore live-display state — runs after recording finishes OR on error
+        photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+        photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+        animCanvas = origAnim; animCtx = origAnimCtx;
+        offscreen = origOff; offctx = origOffctx;
+        _skipPhotoLayerSync = origSkipSync;
+        renderPhotomaker();
+      };
       videoRecorder.onstop = ()=>{
-        // Force download instead of inline open: octet-stream tells Chrome
-        // "binary file, save it" — playable correctness comes from the .mp4
-        // extension which the OS uses to pick a player on double-click.
         const blob = new Blob(videoChunks, {type: 'application/octet-stream'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `animation-${Date.now()}.${fileExt}`;
+        a.download = `animation-${pw}x${ph}-${Date.now()}.${fileExt}`;
         a.rel = 'noopener';
         a.style.display = 'none';
         document.body.appendChild(a); a.click(); a.remove();
@@ -5200,6 +5339,7 @@
         if(lbl) lbl.textContent = origText;
         btn.dataset.busy = '';
         btn.disabled = false;
+        restoreCanvases();
         updateExportButton();
       };
       
@@ -5280,6 +5420,14 @@
       if(lbl) lbl.textContent = origText;
       btn.dataset.busy = '';
       btn.disabled = false;
+      // Restore canvases on error path too — otherwise the user is left with
+      // a partial swap and the live UI shows the hi-res canvas frozen.
+      photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+      photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+      animCanvas = origAnim; animCtx = origAnimCtx;
+      offscreen = origOff; offctx = origOffctx;
+      _skipPhotoLayerSync = origSkipSync;
+      renderPhotomaker();
       updateExportButton();
     }
   }
@@ -5331,7 +5479,11 @@
     else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
     else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
 
-    const bitrate = Math.max(8_000_000, Math.min(20_000_000, Math.round(pw * ph * 30 * 0.12)));
+    // Live capture is at display resolution — we can't trivially re-render
+    // each frame at hi-res without breaking the live UI. So we lift the
+    // bitrate range so the recorded pixels are well-quantised and stay
+    // sharp under social-media re-encoding. 12-40 Mbps (was 8-20).
+    const bitrate = Math.max(12_000_000, Math.min(40_000_000, Math.round(pw * ph * 30 * 0.18)));
     const stream = comp.captureStream(30);
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
     const chunks = [];
