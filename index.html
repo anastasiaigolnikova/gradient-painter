@@ -557,7 +557,73 @@
   let animMode = 'off';
   let animAmp = 0.30; // 0..1
   let animFreq = 1.20; // Hz base
-  
+
+  // === Simplex noise (Stefan Gustavson reference impl, inlined, public domain).
+  // Replaces multi-sin approximations in Liquid/Smoke for seamless organic
+  // motion instead of "wallpaper" interference patterns from sin/cos chains.
+  // 2D used for plane noise; 3D uses time as z-axis for loop-free drift.
+  const _simplex = (()=>{
+    const p = new Uint8Array(256);
+    for(let i=0;i<256;i++) p[i] = i;
+    let s = 1337;
+    for(let i=255;i>0;i--){ s=(s*16807)%2147483647; const j=s%(i+1); const tmp=p[i]; p[i]=p[j]; p[j]=tmp; }
+    const perm = new Uint8Array(512);
+    for(let i=0;i<512;i++) perm[i] = p[i & 255];
+    const F2 = 0.5*(Math.sqrt(3)-1), G2 = (3-Math.sqrt(3))/6;
+    const g2 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+    function noise2D(xin, yin){
+      const sxy=(xin+yin)*F2, i=Math.floor(xin+sxy), j=Math.floor(yin+sxy);
+      const t=(i+j)*G2, x0=xin-i+t, y0=yin-j+t;
+      const i1=x0>y0?1:0, j1=x0>y0?0:1;
+      const x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2;
+      const ii=i&255, jj=j&255;
+      let n0=0,n1=0,n2=0;
+      let G=g2[perm[ii+perm[jj]]&7];
+      let t0=0.5-x0*x0-y0*y0; if(t0>0){ t0*=t0; n0=t0*t0*(G[0]*x0+G[1]*y0); }
+      G=g2[perm[ii+i1+perm[jj+j1]]&7];
+      let t1=0.5-x1*x1-y1*y1; if(t1>0){ t1*=t1; n1=t1*t1*(G[0]*x1+G[1]*y1); }
+      G=g2[perm[ii+1+perm[jj+1]]&7];
+      let t2=0.5-x2*x2-y2*y2; if(t2>0){ t2*=t2; n2=t2*t2*(G[0]*x2+G[1]*y2); }
+      return 70*(n0+n1+n2);
+    }
+    const F3=1/3, G3=1/6;
+    const g3=[[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    function noise3D(xin, yin, zin){
+      const sxyz=(xin+yin+zin)*F3, i=Math.floor(xin+sxyz), j=Math.floor(yin+sxyz), k=Math.floor(zin+sxyz);
+      const t=(i+j+k)*G3, x0=xin-i+t, y0=yin-j+t, z0=zin-k+t;
+      let i1,j1,k1,i2,j2,k2;
+      if(x0>=y0){ if(y0>=z0){i1=1;j1=0;k1=0;i2=1;j2=1;k2=0;}
+        else if(x0>=z0){i1=1;j1=0;k1=0;i2=1;j2=0;k2=1;}
+        else {i1=0;j1=0;k1=1;i2=1;j2=0;k2=1;} }
+      else { if(y0<z0){i1=0;j1=0;k1=1;i2=0;j2=1;k2=1;}
+        else if(x0<z0){i1=0;j1=1;k1=0;i2=0;j2=1;k2=1;}
+        else {i1=0;j1=1;k1=0;i2=1;j2=1;k2=0;} }
+      const x1=x0-i1+G3, y1=y0-j1+G3, z1=z0-k1+G3;
+      const x2=x0-i2+2*G3, y2=y0-j2+2*G3, z2=z0-k2+2*G3;
+      const x3=x0-1+3*G3, y3=y0-1+3*G3, z3=z0-1+3*G3;
+      const ii=i&255, jj=j&255, kk=k&255;
+      let n0=0,n1=0,n2=0,n3=0;
+      let G=g3[perm[ii+perm[jj+perm[kk]]]%12];
+      let t0=0.6-x0*x0-y0*y0-z0*z0; if(t0>0){ t0*=t0; n0=t0*t0*(G[0]*x0+G[1]*y0+G[2]*z0); }
+      G=g3[perm[ii+i1+perm[jj+j1+perm[kk+k1]]]%12];
+      let t1=0.6-x1*x1-y1*y1-z1*z1; if(t1>0){ t1*=t1; n1=t1*t1*(G[0]*x1+G[1]*y1+G[2]*z1); }
+      G=g3[perm[ii+i2+perm[jj+j2+perm[kk+k2]]]%12];
+      let t2=0.6-x2*x2-y2*y2-z2*z2; if(t2>0){ t2*=t2; n2=t2*t2*(G[0]*x2+G[1]*y2+G[2]*z2); }
+      G=g3[perm[ii+1+perm[jj+1+perm[kk+1]]]%12];
+      let t3=0.6-x3*x3-y3*y3-z3*z3; if(t3>0){ t3*=t3; n3=t3*t3*(G[0]*x3+G[1]*y3+G[2]*z3); }
+      return 32*(n0+n1+n2+n3);
+    }
+    return { noise2D, noise3D };
+  })();
+
+  // === Penner easings — replace robotic linear/sin cycle phases with proper
+  // motion-design curves. Used by Reveal build, Particle dissolve snap, the
+  // PixelHD cell flicker, and Shuffle migration.
+  const easeInOutQuart = (t)=> t<0.5 ? 8*t*t*t*t : 1 - Math.pow(-2*t+2, 4)/2;
+  const easeInOutCubic = (t)=> t<0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+  const easeOutBack    = (t)=>{ const c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); };
+
+
   // History stack for undo functionality
   let historyStack = [];
   const MAX_HISTORY = 50; // Maximum number of undo steps
@@ -1961,12 +2027,21 @@
     destCtx.clearRect(0,0,w,h);
     
     if(animMode === 'flow'){
-      // Flow: волновое искажение по всему полю
+      // Flow: fabric-ripple wave. Was a single global sin — whole frame
+      // sheared as one rigid sheet. Now: two decorrelated wave components
+      // (different frequency per axis + perpendicular displacement) so rows
+      // and columns shimmer independently like real fabric.
+      const f = animFreq;
       for(let y=0; y<h; y++){
+        // Each row gets its own phase offset for decorrelation
+        const rowPhase = y * 0.012 * f;
         for(let x=0; x<w; x++){
-          const wave = Math.sin((x*0.02 + y*0.02) + t*animFreq) * animAmp * 20;
-          const srcX = Math.floor(x + wave);
-          const srcY = Math.floor(y + wave*0.5);
+          const colPhase = x * 0.014 * f;
+          // Two waves: one mostly horizontal, one perpendicular (vertical)
+          const waveX = Math.sin(rowPhase + t * f * 0.9) * animAmp * 22;
+          const waveY = Math.sin(colPhase + t * f * 1.1 + 1.7) * animAmp * 14;
+          const srcX = Math.floor(x + waveX);
+          const srcY = Math.floor(y + waveY);
           if(srcX>=0 && srcX<w && srcY>=0 && srcY<h){
             const si = (srcY*w + srcX)*4;
             const di = (y*w + x)*4;
@@ -2029,6 +2104,9 @@
     else if(phase < 0.55)  buildPhase = 1;
     else if(phase < 1.0)   buildPhase = 1 - (phase - 0.55) / 0.45;
     else                   buildPhase = 0;
+    // Cinematic ease so elements materialise with acceleration instead of
+    // a linear ramp (linear feels robotic / placeholder).
+    buildPhase = easeInOutQuart(buildPhase);
 
     // At buildPhase=1 we use exactly the user's settings (sourceCanvas already
     // matches), so we can skip the expensive re-render.
@@ -2103,11 +2181,13 @@
     const out = buf.out;
     const scale = 0.006 * animFreq;
     const amp = animAmp * 50;
-    const tL = t * 2;
+    // 3D simplex with time as Z axis → seamless drift, no sin-wallpaper pattern
+    const tL = t * 0.5;
+    const n3 = _simplex.noise3D;
     for(let y=0; y<h; y++){
       for(let x=0; x<w; x++){
-        const nx = Math.sin(x*scale + y*scale*0.7 + tL) * Math.cos(y*scale*1.3 - tL*0.5);
-        const ny = Math.sin(y*scale - x*scale*0.5 + tL*0.7) * Math.cos(x*scale*0.9 + tL*0.3);
+        const nx = n3(x*scale,       y*scale,       tL);
+        const ny = n3(y*scale + 100, x*scale + 100, tL);
         const sx = Math.max(0, Math.min(w-1, (x + nx*amp)|0));
         const sy = Math.max(0, Math.min(h-1, (y + ny*amp)|0));
         const si = (sy*w + sx)*4;
@@ -2121,22 +2201,31 @@
     destCtx.putImageData(buf.img, 0, 0);
   }
 
-  // Smoke: multi-octave noise displacement with larger amplitude / slower drift
+  // Smoke: two-octave 3D simplex noise with upward bias and top-edge fade →
+  // reads as actual rising smoke / plume instead of the previous sin-chain
+  // shimmer. Time as Z axis = seamless loop, no wallpaper pattern.
   function effectSmoke(destCtx, w, h, t, tSec){
     const imgData = animCtx.getImageData(0, 0, w, h);
     const src = imgData.data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
-    const t1 = tSec * 1.0 * Math.max(0.2, animSpeed);
-    const t2 = tSec * 2.2 * Math.max(0.2, animSpeed);
+    const t1 = tSec * 0.4 * Math.max(0.2, animSpeed);
+    const t2 = tSec * 0.9 * Math.max(0.2, animSpeed);
     const amp = animAmp * 90;
-    const f = animFreq;
+    const f = animFreq * 0.006;
+    const n3 = _simplex.noise3D;
     for(let y=0; y<h; y++){
+      // Upward decay: smoke amplitude decays toward the top so it "dissipates"
+      // instead of looping in place. yFrac = 0 at top → factor near 0.4, 1 at
+      // bottom → factor 1.
+      const yFactor = 0.4 + 0.6 * (y / Math.max(1, h - 1));
       for(let x=0; x<w; x++){
-        const nx = Math.sin(x*0.007*f + t1) + 0.5*Math.sin(x*0.022*f + t2 + y*0.01);
-        const ny = Math.cos(y*0.007*f - t1*0.7) + 0.5*Math.cos(y*0.022*f + t2 - x*0.01);
-        const sx = Math.max(0, Math.min(w-1, (x + nx*amp*0.6)|0));
-        const sy = Math.max(0, Math.min(h-1, (y + ny*amp*0.6)|0));
+        const nx = n3(x*f, y*f, t1) + 0.5 * n3(x*f*3.1, y*f*3.1, t2 + 17);
+        let ny = n3(y*f + 99, x*f + 99, t1) + 0.5 * n3(y*f*3.1 + 99, x*f*3.1 + 99, t2 + 31);
+        // Bias Y component slightly negative (upward) so the plume rises
+        ny -= 0.25;
+        const sx = Math.max(0, Math.min(w-1, (x + nx*amp*0.6*yFactor)|0));
+        const sy = Math.max(0, Math.min(h-1, (y + ny*amp*0.6*yFactor)|0));
         const si = (sy*w + sx)*4;
         const di = (y*w + x)*4;
         out[di]   = src[si];
@@ -2281,8 +2370,13 @@
     const tile = Math.max(4, Math.floor(sizeSlider * 0.6));
     const cycleTime = 3.5 / Math.max(0.2, animSpeed);
     const phase = (tSec % cycleTime) / cycleTime; // 0..1
-    // Symmetric: dissolve out then back in (triangle wave)
-    const tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2; // 0..1..0
+    // Symmetric dissolve out then back in (triangle wave), with easeOutBack
+    // applied — particles overshoot slightly then snap back into place, much
+    // more satisfying than a linear in/out.
+    let tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2; // 0..1..0
+    tri = easeOutBack(tri);
+    // Clamp the back-overshoot so we never go past 1.1 (avoids alpha < -0.07)
+    if(tri > 1) tri = 1;
     const cols = Math.ceil(w / tile);
     const rows = Math.ceil(h / tile);
     const cx = w * 0.5, cy = h * 0.5;
@@ -2332,16 +2426,36 @@
     const cycle = 2.5 / Math.max(0.2, animSpeed);
     const phase = (tSec % cycle) / cycle;
     destCtx.lineWidth = 1;
+    // Replace per-cell random phase (which read as random noise, not motion)
+    // with a diagonal sweep: (c + r) drives the activation wave so cells
+    // light up along a diagonal travelling across the grid — feels like a
+    // loading scan / data sweep. Per-cell randomness becomes a small offset.
+    // Soft fade in/out (easeInOutCubic on the local window) replaces the
+    // harsh on/off snap with a graceful materialise/dissolve.
     for(let r=0; r<rows; r++){
       for(let c=0; c<cols; c++){
         const id = r * cols + c;
-        const bp = seededRandom(id * 0.137);
-        const local = (phase + bp) % 1;
-        const active = local > 0.25 && local < 0.85;
+        const sweep = (c + r) * 0.04 + seededRandom(id * 0.137) * 0.15;
+        const local = (phase + sweep) % 1;
+        // Activation window [0.25, 0.85]; alpha eased in/out across it
+        let alpha = 0;
+        if(local > 0.20 && local < 0.90){
+          const lp = (local - 0.20) / 0.70; // 0..1 within window
+          // Ease in/out + plateau: fade in to ~1 from edges, hold at middle
+          const a = lp < 0.25 ? easeInOutCubic(lp / 0.25)
+                  : lp > 0.75 ? easeInOutCubic((1 - lp) / 0.25)
+                              : 1;
+          alpha = a;
+        }
+        const active = alpha > 0.05;
         const x = c * blockSize, y = r * blockSize;
         const bw = Math.min(blockSize, w - x), bh = Math.min(blockSize, h - y);
         if(active){
+          destCtx.fillStyle = '#000';
+          destCtx.fillRect(x, y, bw, bh);
+          destCtx.globalAlpha = alpha;
           destCtx.drawImage(sourceCanvas, x, y, bw, bh, x, y, bw, bh);
+          destCtx.globalAlpha = 1;
         } else {
           destCtx.fillStyle = '#000';
           destCtx.fillRect(x, y, bw, bh);
@@ -2740,12 +2854,19 @@
       // SPEED controls migration rate. FREQ no longer doubles up with SPEED
       // (was redundant); it now drives a per-element breathing pulse below.
       const pairSeed = Math.floor(i / 2) * 0.137;
-      const migPhase = tSec * 1.6 * speed + seededRandom(pairSeed + 300) * Math.PI * 2;
-      // AMPLITUDE now scales migration depth too — at AMP=0 elements barely
-      // wobble in place, at AMP=1 they swap fully. Floor of 0.15 keeps slider=0
-      // from looking totally frozen (still some hint of motion).
+      // Decorrelate migration phase per pair so the grid ripples across the
+      // image instead of every pair swapping in lockstep — was a global
+      // sinewave previously, made the swap feel mechanical.
+      const phaseOff = seededRandom(pairSeed + 300) * Math.PI * 2;
+      const migPhase = tSec * 1.6 * speed + phaseOff + pairSeed * 5;
+      // AMPLITUDE scales how far each pair actually swaps (0.15..1).
       const swapDepth = 0.15 + animAmp * 0.85;
-      const migT = (Math.sin(migPhase) * 0.5 + 0.5) * swapDepth; // 0..swapDepth
+      // Convert sin → 0..1 ramp then apply easeInOutQuart so members push
+      // decisively through the midpoint (where they'd otherwise overlap)
+      // and dwell at the endpoints — reads as a deliberate dance step, not
+      // a hover.
+      const raw = Math.sin(migPhase) * 0.5 + 0.5;
+      const migT = easeInOutQuart(raw) * swapDepth;
 
       // Position swap: each member travels along the line between anchors
       const dx = partner.x - p.x;
@@ -2924,9 +3045,12 @@
         ox = nx * animAmp * 38;
         oy = ny * animAmp * 38;
       } else if(animMode === 'smoke'){
-        const t1 = tSec * 1.2 * Math.max(0.2, animSpeed); // 2.4× base rate
-        ox = (Math.sin(p.x*0.008*animFreq + t1) + 0.5*Math.sin(p.x*0.022*animFreq + t1*1.7)) * animAmp * 55;
-        oy = (Math.cos(p.y*0.008*animFreq - t1*0.7) + 0.5*Math.cos(p.y*0.022*animFreq + t1*1.3)) * animAmp * 55;
+        // 3D simplex with time as Z → seamless organic drift, no sin pattern
+        const t1 = tSec * 0.5 * Math.max(0.2, animSpeed);
+        const f = animFreq * 0.008;
+        const n3 = _simplex.noise3D;
+        ox = (n3(p.x*f,       p.y*f,       t1) + 0.5*n3(p.x*f*2.5,       p.y*f*2.5,       t1*1.5)) * animAmp * 55;
+        oy = (n3(p.x*f + 99,  p.y*f + 99,  t1) + 0.5*n3(p.x*f*2.5 + 99,  p.y*f*2.5 + 99,  t1*1.5)) * animAmp * 55;
       } else if(animMode === 'glitch'){
         const burstSeed = Math.floor(t * 6) + i * 0.31; // speed-scaled
         if(seededRandom(burstSeed) > 0.82){
