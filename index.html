@@ -4244,78 +4244,92 @@
     ctx.putImageData(out, 0, 0);
   }
 
-  // Haze (light streak veil): vertical motion-blurred copy of the photo
-  // mixed over the original with a vertical-gradient mask, so part of the
-  // image stays sharp and part dissolves into elongated light trails — the
-  // cinematic "veil of light" / vertical-dissolve look. Warm boost on the
-  // hazy region gives it the golden ambient feel from the references.
-  // SIZE → streak length (default ~60 px, max ~300 px — much more dramatic
-  //        than the previous version)
-  // STRENGTH → haze density (subtle veil to heavy fog)
-  // INVERT → haze on top half instead of bottom half
+  // Haze (light streak veil): bloom-style. Extract BRIGHT pixels (subject
+  // highlights + bright backgrounds), boost them with a warm tint, motion-
+  // blur them vertically, then ADDITIVELY blend back over the original.
+  // Bright sources bleed glow into adjacent darker areas — the effect wraps
+  // around the subject silhouette as warm light envelops it, instead of a
+  // flat horizontal blur band.
+  //  SIZE → streak length
+  //  STRENGTH → bloom intensity (subtle glow → heavy enveloping fog)
+  //  INVERT → swap which vertical half is more saturated with haze
   function renderHaze(ctx, imgData, size, detail, w, h, invert){
     const data = imgData.data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
-    // Streak scales with image height so 1080p shots get the same proportional
-    // dreamy reach as 720p. Default size=20 → streak ≈ 6 % of image height.
     const streak = Math.max(20, Math.floor(size * 0.03 * h + size * 1.5));
-    const detailFactor = (detail - 10) / 80; // 0..1
-    const density = 0.5 + detailFactor * 0.45; // 0.5..0.95
+    const detailFactor = (detail - 10) / 80;
+    const density = 0.45 + detailFactor * 0.6; // 0.45..1.05 (overdriven on purpose)
+    const n2 = _simplex.noise2D;
 
-    // Vertical box blur via sliding window — O(w·h) regardless of streak length.
-    // Per column: accumulate sum over a 2·streak+1 window, slide down the image.
+    // 1. Bright-mask + warm boost: only the upper luma range contributes to
+    //    the haze, so the streaks come from highlights (sky, skin, reflections)
+    //    not from shadows. Pow(1.5) clips the dim mid-tones cleanly.
+    const bright = new Uint8ClampedArray(data.length);
+    for(let i = 0; i < data.length; i += 4){
+      const r = data[i], g = data[i+1], b = data[i+2];
+      const luma = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+      const t = Math.max(0, luma - 0.25) / 0.75; // 0..1, threshold the lower 25 %
+      const boost = Math.pow(t, 1.4);
+      // Warm cast: amplify R/G, attenuate B for amber glow
+      bright[i]     = Math.min(255, r * boost * 1.25 + 28 * boost);
+      bright[i + 1] = Math.min(255, g * boost * 1.15 + 18 * boost);
+      bright[i + 2] = Math.min(255, b * boost * 0.95 + 4  * boost);
+    }
+
+    // 2. Vertical sliding-window blur over the bright layer — produces the
+    //    light streaks. O(w·h) regardless of streak length.
     const haze = new Uint8ClampedArray(data.length);
     for(let x = 0; x < w; x++){
-      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      let sR = 0, sG = 0, sB = 0, count = 0;
       for(let y = 0; y < Math.min(streak, h); y++){
         const i = (y * w + x) * 4;
-        sumR += data[i]; sumG += data[i+1]; sumB += data[i+2];
+        sR += bright[i]; sG += bright[i+1]; sB += bright[i+2];
         count++;
       }
       for(let y = 0; y < h; y++){
         const add = y + streak;
         if(add < h){
           const ai = (add * w + x) * 4;
-          sumR += data[ai]; sumG += data[ai+1]; sumB += data[ai+2];
+          sR += bright[ai]; sG += bright[ai+1]; sB += bright[ai+2];
           count++;
         }
         const rem = y - streak - 1;
         if(rem >= 0){
           const ri = (rem * w + x) * 4;
-          sumR -= data[ri]; sumG -= data[ri+1]; sumB -= data[ri+2];
+          sR -= bright[ri]; sG -= bright[ri+1]; sB -= bright[ri+2];
           count--;
         }
         const di = (y * w + x) * 4;
         const c = count > 0 ? count : 1;
-        haze[di]     = sumR / c;
-        haze[di + 1] = sumG / c;
-        haze[di + 2] = sumB / c;
-        haze[di + 3] = data[di + 3];
+        haze[di]     = sR / c;
+        haze[di + 1] = sG / c;
+        haze[di + 2] = sB / c;
       }
     }
 
-    // Mix original + haze using a vertical mask. Bottom hazy by default
-    // (light dissolves the lower body); INVERT puts haze on top instead.
-    // Boost the haze toward warm white for a clear glowing-streak look —
-    // without this the effect just reads as "slightly blurry" instead of
-    // "veil of light".
+    // 3. Composite: original + (blurred bright layer × spatial mask).
+    //    The mask is a vertical gradient PLUS a low-frequency Simplex noise
+    //    field so the haze comes in patches / clouds rather than a uniform
+    //    horizontal band. This is what gives the "wrapping around the
+    //    subject" feel — areas right next to bright highlights get the most
+    //    glow, with organic gaps elsewhere.
     for(let y = 0; y < h; y++){
-      let m = y / Math.max(1, h - 1);
-      if(invert) m = 1 - m;
-      m = m * m; // ease-in
-      const mix = m * density;
-      const inv = 1 - mix;
+      let vMask = y / Math.max(1, h - 1);
+      if(invert) vMask = 1 - vMask;
+      // Gentler vertical gradient — the bottom isn't *uniformly* hazy now,
+      // patches do most of the work.
+      vMask = 0.35 + vMask * 0.65;
       for(let x = 0; x < w; x++){
         const i = (y * w + x) * 4;
         if(data[i + 3] === 0){ out[i + 3] = 0; continue; }
-        // Brighten + warm-tint the haze contribution (not the original)
-        const hr = Math.min(255, haze[i]     * 1.30 + 40);
-        const hg = Math.min(255, haze[i + 1] * 1.20 + 28);
-        const hb = Math.min(255, haze[i + 2] * 1.05 + 8);
-        let r = data[i]     * inv + hr * mix;
-        let g = data[i + 1] * inv + hg * mix;
-        let b = data[i + 2] * inv + hb * mix;
+        // Patches: low-freq Simplex (large clouds, ~0..1)
+        const patch = (n2(x * 0.0035, y * 0.0035) + 1) * 0.5;
+        const mix = density * vMask * (0.35 + patch * 0.95);
+        // Additive composite — glow ADDS on top instead of replacing
+        let r = data[i]     + haze[i]     * mix;
+        let g = data[i + 1] + haze[i + 1] * mix;
+        let b = data[i + 2] + haze[i + 2] * mix;
         if(r > 255) r = 255;
         if(g > 255) g = 255;
         if(b > 255) b = 255;
