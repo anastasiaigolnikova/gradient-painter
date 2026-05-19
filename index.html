@@ -4818,8 +4818,12 @@
           duration: frameDurUs
         });
         const keyFrame = (i % keyframeEvery) === 0;
-        encoder.encode(frame, { keyFrame });
+        // Guard encode — sync exceptions from a misconfigured codec land
+        // here, async errors come through the encoder.error callback.
+        try { encoder.encode(frame, { keyFrame }); }
+        catch(e){ encoderError = e; }
         frame.close();
+        if(encoderError) break;
         // Drain encoder queue. _bgYield uses MessageChannel so the loop keeps
         // running at full speed even when the tab is in the background —
         // setTimeout would throttle to ~1Hz and stall the export.
@@ -4831,10 +4835,16 @@
 
       if(lbl) lbl.textContent = 'FINALIZING…';
       await encoder.flush();
+      if(encoderError) throw encoderError;
       try { if(encoder && encoder.state !== 'closed') encoder.close(); } catch(_){}
       muxer.finalize();
 
       const buffer = muxer.target.buffer;
+      // Sanity check — a valid MP4 with even one frame should be > 4 KB.
+      // Anything tiny means muxer wrote no chunks (broken pipeline).
+      if(!buffer || buffer.byteLength < 4096){
+        throw new Error('Empty / truncated output: ' + (buffer ? buffer.byteLength + ' bytes' : 'no buffer'));
+      }
       const blob = new Blob([buffer], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
