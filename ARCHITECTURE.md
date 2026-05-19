@@ -123,7 +123,33 @@ When the user changes filter and the currently-selected animation becomes disabl
 
 Fallback path (`exportFullVideo`) using MediaRecorder is kept for browsers without WebCodecs (very old Safari/Firefox).
 
-For photo + animation: legacy 5-second synthetic-time recorder via MediaRecorder (`RECORD VIDEO (5S)` button).
+For photo + animation: WebCodecs offline encode (`exportPhotoLoopWebCodecs`) is the preferred path; MediaRecorder synthetic-time fallback runs only when WebCodecs / H.264 / mp4-muxer is unavailable.
+
+### Smooth-export invariants (do NOT regress)
+
+These small things together made downloaded MP4s play smoothly without rivers / stutter — preserve them when editing the export pipeline:
+
+1. **`VideoFrame { timestamp, duration: frameDurUs }`** — both fields are required. Without `duration`, mp4-muxer can't compute the `stts` table correctly and players show stutter even with evenly-spaced timestamps.
+2. **Even dimensions everywhere.** H.264 (and several MediaRecorder profiles on Safari) reject odd width/height. Round each export dim to `n - n % 2` before calling `isConfigSupported` AND when sizing the realtime / RECORD LIVE composite canvas.
+3. **H.264 only in MP4.** Do NOT mux VP9 in the `.mp4` container — mp4-muxer accepts it but QuickTime / Premiere / Discord won't play it. If H.264 isn't supported, throw → caller falls back to MediaRecorder (which writes proper VP9-in-WebM with a `.webm` extension).
+4. **Constant-rate timestamps in microseconds**, computed as `i * frameDurUs` where `frameDurUs = Math.round(1_000_000 / fps)`. Never derive timestamps from wall-clock `performance.now()`.
+5. **`firstTimestampBehavior: 'offset'`** in the muxer config — for the video path, source seeks can land at `currentTime` like 0.0001, so the first decoded frame has a tiny non-zero `mediaTime`. The muxer subtracts that offset instead of throwing.
+6. **No `timescale` override.** Letting the muxer pick its default (~57600) gives enough precision that 30 fps timestamps land where they actually are; a manually-rounded timescale produced an uneven `stts` table → audible stutter.
+7. **`_bgYield()` via MessageChannel**, not `setTimeout(0)`. setTimeout throttles to ~1 Hz when the tab is backgrounded, which would stall the encode loop. MessageChannel postMessage stays at full speed.
+8. **`encoder.encodeQueueSize > 8 → await _bgYield()`** drains the encoder before pushing more frames; otherwise memory blows up on long exports.
+9. **Check `encoderError` BOTH after the encode loop ends AND after `await encoder.flush()`.** Some implementations resolve `flush()` cleanly even though the error callback already fired on the last frame — without the pre-flush check, the muxer would `.finalize()` a partial bitstream and you'd ship a tiny corrupted file.
+10. **Sanity check the output buffer** (`buffer.byteLength < 4096` → throw). Catches the rare case where the muxer wrote no chunks; the caller's try/catch then falls back to MediaRecorder.
+11. **Bitrate floor 12 Mbps, cap 40 Mbps.** 1080p high-motion procedural animation needs more than YouTube-default 8 Mbps to avoid mosquito-noise that reads as motion stutter on heavy filters.
+12. **Heavy-filter resolution caps.** Per-pixel filters (`liquid`, `smoke`, `chromatic`, `particle`, `pixelhd`, `aiscan`) cap at 1280 px longest side; cheap modes cap at 1920 (WebCodecs) / 2560 (MediaRecorder + RECORD LIVE). CPU-bound filters can't keep 30 fps at higher res — the recorder ends up with sparse frames spread across wall-clock time → stutter.
+13. **Lock the filter dropdown during export.** `patternSelect` is gated by `isAnyExportBusy()` — its change handler would clear `_skipPhotoLayerSync` and the next render would resize `photoLayer` to display dims mid-encode, corrupting frames. Lock the same way for `animMode` if you add a similar reset.
+14. **MediaRecorder watchdog.** After `recorder.stop()`, arm a 3-second `setTimeout` that calls `restoreCanvases()` if `onstop` hasn't fired. Safari occasionally drops the event when the capture stream shuts down without it; without the watchdog the live UI is stuck on the swapped hi-res canvas.
+
+### RECORD LIVE specifics
+
+- Cap at 15 s wall-clock (`MANUAL_REC_MAX_MS`). Beyond that, the user should be using DOWNLOAD MP4 (5S / 10S) for a deterministic frame-by-frame render.
+- Output dims are the photo's native size, capped at 2560 longest side, then rounded to even.
+- Composite canvas (`comp`) is pinned off-screen and refreshed every RAF tick; `captureStream(30)` produces the MediaRecorder stream.
+- Codec preference inside MediaRecorder: H.264 → MP4 first (`avc1.640028` → `42E01E` → bare mp4), then VP9-in-WebM, then bare webm.
 
 ---
 
