@@ -4661,6 +4661,172 @@
   //
   // Why this exists: MediaRecorder + canvas.captureStream produces stuttery
   // output because MediaRecorder timestamps frames by wall-clock, not by the
+  // Photo / SVG animated loop — offline WebCodecs encoder. Renders N=fps×sec
+  // frames with synthetic time = i/fps, encodes each with explicit timestamp
+  // i × frameDurUs. Render can take 200 ms / frame on heavy filters; the
+  // output MP4 is still mathematically-perfect 30 fps. Replaces the
+  // MediaRecorder realtime path which dropped to ~6 fps wall-clock on
+  // Smoke / Liquid and played back as stutter.
+  async function exportPhotoLoopWebCodecs(durationMs, btn, lbl){
+    const origText = lbl ? lbl.textContent : '';
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+
+    // Pick export resolution from selected photo's native size. WebCodecs is
+    // offline so per-frame budget doesn't matter; cap at 2560 just to keep
+    // total encode time and file size reasonable.
+    const dispW = photoLayer.width, dispH = photoLayer.height;
+    let pw, ph;
+    {
+      const target = _pickExportSize();
+      if(target){ pw = target.w; ph = target.h; }
+      else { pw = dispW * 2; ph = dispH * 2; }
+      const OFFLINE_CAP = 2560;
+      const longest = Math.max(pw, ph);
+      if(longest > OFFLINE_CAP){
+        const k = OFFLINE_CAP / longest;
+        pw = Math.round(pw * k);
+        ph = Math.round(ph * k);
+      }
+    }
+
+    // Save live-display state
+    const origPhotoLayer = photoLayer, origPhotoCtx = photoCtx;
+    const origAnim = animCanvas, origAnimCtx = animCtx;
+    const origOff = offscreen, origOffctx = offctx;
+    const origSizes = photos.map(p => p.size);
+    const origScales = photos.map(p => p.scale);
+    const origOX = photos.map(p => p.offsetX);
+    const origOY = photos.map(p => p.offsetY);
+    const origSkipSync = _skipPhotoLayerSync;
+    const origIsRecording = isRecording;
+    const origSynthetic = syntheticTime;
+
+    // Hi-res replacements
+    photoLayer = document.createElement('canvas');
+    photoLayer.width = pw; photoLayer.height = ph;
+    photoCtx = photoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
+    animCanvas = document.createElement('canvas');
+    animCanvas.width = pw; animCanvas.height = ph;
+    animCtx = animCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+    offscreen = document.createElement('canvas');
+    offscreen.width = pw; offscreen.height = ph;
+    offctx = offscreen.getContext('2d', { alpha: false, willReadFrequently: true });
+
+    const sizeScale = Math.max(pw / dispW, ph / dispH);
+    photos.forEach(p => {
+      if(typeof p.size === 'number') p.size = p.size * sizeScale;
+      p.scale = 1; p.offsetX = 0; p.offsetY = 0;
+    });
+    _skipPhotoLayerSync = true;
+    isRecording = true;
+    syntheticTime = 0;
+
+    const fps = 30;
+    const frameDurUs = Math.round(1_000_000 / fps);
+    const totalFrames = Math.max(1, Math.round((durationMs || 5000) / 1000 * fps));
+    const bitrate = Math.max(12_000_000, Math.min(40_000_000, Math.round(pw * ph * fps * 0.15)));
+
+    // Composite canvas — each frame: black base + gl gradient + photoLayer
+    const comp = document.createElement('canvas');
+    comp.width = pw; comp.height = ph;
+    const cctx = comp.getContext('2d', { alpha: false });
+
+    let muxer = null;
+    let encoder = null;
+    try {
+      const Mp4Muxer = window.Mp4Muxer;
+      if(!Mp4Muxer || !Mp4Muxer.Muxer) throw new Error('mp4-muxer not loaded');
+      muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: 'avc', width: pw, height: ph },
+        firstTimestampBehavior: 'offset',
+        fastStart: 'in-memory'
+      });
+
+      let encoderError = null;
+      encoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (e) => { encoderError = e; console.error('VideoEncoder error:', e); }
+      });
+
+      const codecCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
+      let configured = false;
+      for(const codec of codecCandidates){
+        try {
+          const support = await VideoEncoder.isConfigSupported({
+            codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' }
+          });
+          if(support && support.supported){
+            encoder.configure({ codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' } });
+            configured = true; break;
+          }
+        } catch(_){}
+      }
+      if(!configured) throw new Error('No supported H.264 codec');
+
+      const keyframeEvery = Math.max(30, fps * 2);
+      for(let i = 0; i < totalFrames; i++){
+        if(encoderError) break;
+        // Synthetic time advances by exactly 1/fps per frame — renderPhotomaker
+        // reads this via tSec when isRecording is true, then multiplies by
+        // animSpeed inside. User-set animAmp / animFreq / per-photo settings
+        // are applied per-frame.
+        syntheticTime = i / fps;
+        renderPhotomaker();
+        cctx.fillStyle = '#000'; cctx.fillRect(0, 0, pw, ph);
+        cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
+        cctx.drawImage(photoLayer, 0, 0);
+        const frame = new VideoFrame(comp, { timestamp: i * frameDurUs });
+        const keyFrame = (i % keyframeEvery) === 0;
+        encoder.encode(frame, { keyFrame });
+        frame.close();
+        // Drain encoder queue so we don't pile up too much memory
+        while(encoder.encodeQueueSize > 8){
+          await new Promise(r => setTimeout(r, 4));
+        }
+        if(lbl) lbl.textContent = 'ENCODING ' + Math.floor((i + 1) / totalFrames * 100) + '%';
+      }
+
+      if(lbl) lbl.textContent = 'FINALIZING…';
+      await encoder.flush();
+      try { if(encoder && encoder.state !== 'closed') encoder.close(); } catch(_){}
+      muxer.finalize();
+
+      const buffer = muxer.target.buffer;
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'animation-' + pw + 'x' + ph + '-' + Date.now() + '.mp4';
+      a.rel = 'noopener'; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    } catch(err){
+      console.error('Photo loop WebCodecs error:', err);
+      alert('Ошибка записи: ' + (err && err.message ? err.message : err));
+    } finally {
+      try { if(encoder && encoder.state !== 'closed') encoder.close(); } catch(_){}
+      photos.forEach((p, i) => {
+        if(typeof origSizes[i] === 'number') p.size = origSizes[i];
+        if(typeof origScales[i] === 'number') p.scale = origScales[i];
+        if(typeof origOX[i] === 'number') p.offsetX = origOX[i];
+        if(typeof origOY[i] === 'number') p.offsetY = origOY[i];
+      });
+      photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
+      animCanvas = origAnim; animCtx = origAnimCtx;
+      offscreen = origOff; offctx = origOffctx;
+      _skipPhotoLayerSync = origSkipSync;
+      isRecording = origIsRecording;
+      syntheticTime = origSynthetic;
+      renderPhotomaker();
+      if(lbl) lbl.textContent = origText;
+      btn.dataset.busy = '';
+      btn.disabled = false;
+      updateExportButton();
+    }
+  }
+
   // animation's logical time. Even with all sync tricks, exported MP4s feel
   // jerky on heavy filters. WebCodecs VideoEncoder lets us assign exact
   // per-frame timestamps in microseconds, and runs offline — render can take
@@ -5241,6 +5407,18 @@
     if(!filtersAnimated || (photos.length === 0 && !svgLoaded)){
       alert('Включите анимацию и загрузите фото / SVG');
       return;
+    }
+
+    // Prefer offline WebCodecs path — frames get explicit timestamps so heavy
+    // filters (Smoke, Liquid, …) play back at proper 30 fps regardless of how
+    // long each render takes. MediaRecorder realtime path is the fallback for
+    // browsers without WebCodecs (older Safari / Firefox).
+    {
+      const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+      const hasMuxer = typeof window.Mp4Muxer !== 'undefined' && window.Mp4Muxer.Muxer;
+      if(hasWebCodecs && hasMuxer){
+        return exportPhotoLoopWebCodecs(durationMs, btn, lbl);
+      }
     }
 
     const origText = lbl ? lbl.textContent : '';
