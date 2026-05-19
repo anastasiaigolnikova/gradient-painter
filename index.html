@@ -53,6 +53,8 @@
     .hex-input{width:56px;height:22px;border:1px solid var(--b);background:transparent;color:var(--t);padding:0 6px;font:10px/22px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box;border-radius:2px}
     .hex-input:focus{outline:none;border-color:var(--b-hover)}
     .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:6px;margin-bottom:6px}
+    .btn-fillall{display:block;width:100%;margin:6px 0 10px;padding:6px 10px;background:transparent;border:1px solid var(--b);color:var(--t-mute);font:9px/14px 'Archivo',system-ui;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:2px;transition:color .15s,border-color .15s}
+    .btn-fillall:hover{color:var(--t);border-color:var(--b-hover)}
     .hex-input::placeholder{color:var(--t-mute)}
 
     .checkbox-row{display:flex;align-items:center;gap:8px;margin:8px 0 12px;font-size:10px;letter-spacing:.1em;color:var(--t-mute)}
@@ -196,6 +198,8 @@
       <input id="cMid" type="color" value="#E9F754"/>
       <input id="cBot" type="color" value="#000000"/>
     </div>
+    <button id="fillAllColors" class="btn-fillall" type="button" title="Set all three gradient stops to one colour">≡  ONE COLOUR FOR ALL</button>
+    <input id="fillAllPicker" type="color" value="#EA489E" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" tabindex="-1" />
 
     <label class="lab">MID POSITION<span class="val" id="midPosVal">0.50</span></label>
     <label class="range">
@@ -1113,6 +1117,32 @@
     el.addEventListener('input', ()=> { _snapColour(id); draw(); });
     el.addEventListener('change', ()=> _endColour(id));
   });
+
+  // "ONE COLOUR FOR ALL" — sets the 3 gradient stops to the same colour in
+  // one click instead of changing each picker separately. The visible button
+  // proxies clicks to a hidden colour picker, then sync the chosen value to
+  // cTop / cMid / cBot AND their hex text mirrors, and dispatch input so the
+  // gradient redraws.
+  $('#fillAllColors')?.addEventListener('click', ()=>{
+    const picker = document.getElementById('fillAllPicker');
+    if(picker){ picker.value = $('#cTop')?.value || picker.value; picker.click(); }
+  });
+  $('#fillAllPicker')?.addEventListener('input', (e)=>{
+    const v = e.target.value;
+    // Mark drag start once (so Undo captures pre-fill state)
+    _snapColour('fillAll');
+    ['cTop','cMid','cBot'].forEach(id => {
+      const el = $('#'+id);
+      if(!el) return;
+      el.value = v;
+    });
+    ['hexTop','hexMid','hexBot'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.value = v.toUpperCase();
+    });
+    draw();
+  });
+  $('#fillAllPicker')?.addEventListener('change', ()=> _endColour('fillAll'));
 
   // ===== Slider numeric readouts =====
   // Each slider gets a small live numeric label next to its name so the user
