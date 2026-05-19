@@ -4419,7 +4419,9 @@
     // boundary is meaningful — squared falloff made the first ~30 % of the
     // stretch region barely move, leaving a useless transition.
     for(let y = 0; y < h; y++){
-      const rowFlow = 0.6 + 0.4 * n2(y * 0.005, 200);
+      // Per-row variation at 5× the previous freq → ~5× more independent
+      // strands stacked vertically, matches reference density.
+      const rowFlow = 0.55 + 0.45 * n2(y * 0.025, 200);
       for(let x = 0; x < w; x++){
         const di = (y * w + x) * 4;
         const xNorm = (x - w / 2) * 2 / w;
@@ -4429,7 +4431,9 @@
           falloff = (sideX - safeZone) / Math.max(0.001, 1 - safeZone);
         }
         const stretchPx = falloff * maxStretchPx * rowFlow;
-        const wobble = n2(x * 0.0012, y * 0.006) * stretchPx * 0.55;
+        // Wobble at 3–5× higher frequency than before, lower amplitude.
+        // Tight curls along each strand instead of huge slow bumps.
+        const wobble = n2(x * 0.004, y * 0.03) * stretchPx * 0.32;
         const sx = Math.max(0, Math.min(w - 1, (x - dir * stretchPx) | 0));
         const sy = Math.max(0, Math.min(h - 1, (y + wobble) | 0));
         const si = (sy * w + sx) * 4;
