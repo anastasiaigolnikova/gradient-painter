@@ -4653,6 +4653,20 @@
   let videoChunks = [];
   let isRecording = false; // Flag to track recording state
   let syntheticTime = 0; // Synthetic time for smooth video animation
+
+  // Background-tab-safe yield. setTimeout / setInterval throttle to ~1Hz in
+  // hidden tabs (Chrome), so the WebCodecs encode loop stalls when the user
+  // switches away from the page mid-export. MessageChannel is NOT throttled,
+  // so postMessage-driven scheduling keeps the loop going at full speed
+  // even when the tab is in the background.
+  const _bgYieldChannel = (typeof MessageChannel !== 'undefined') ? new MessageChannel() : null;
+  function _bgYield(){
+    if(!_bgYieldChannel) return new Promise(r => setTimeout(r, 4));
+    return new Promise(resolve => {
+      _bgYieldChannel.port1.onmessage = () => resolve();
+      _bgYieldChannel.port2.postMessage(0);
+    });
+  }
   // Full-length video capture at the source video's native resolution.
   // We temporarily swap the global render canvases (photoLayer/animCanvas/offscreen)
   // for ones sized to videoWidth × videoHeight, run renderPhotomaker once per
@@ -4806,9 +4820,11 @@
         const keyFrame = (i % keyframeEvery) === 0;
         encoder.encode(frame, { keyFrame });
         frame.close();
-        // Drain encoder queue so we don't pile up too much memory
+        // Drain encoder queue. _bgYield uses MessageChannel so the loop keeps
+        // running at full speed even when the tab is in the background —
+        // setTimeout would throttle to ~1Hz and stall the export.
         while(encoder.encodeQueueSize > 8){
-          await new Promise(r => setTimeout(r, 4));
+          await _bgYield();
         }
         if(lbl) lbl.textContent = 'ENCODING ' + Math.floor((i + 1) / totalFrames * 100) + '%';
       }
@@ -5114,9 +5130,10 @@
         const pct = Math.min(99, Math.floor((i / totalFrames) * 100));
         lbl.textContent = 'ENCODING ' + pct + '%';
 
-        // Wait for encoder queue if backed up — don't skip frames
+        // Wait for encoder queue if backed up — don't skip frames.
+        // MessageChannel-based yield keeps the loop running in background tabs.
         while(encoder.encodeQueueSize > 8){
-          await new Promise(r => setTimeout(r, 4));
+          await _bgYield();
         }
       }
 
