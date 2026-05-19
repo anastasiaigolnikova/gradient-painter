@@ -5247,16 +5247,20 @@
     btn.dataset.busy = '1';
     btn.disabled = true;
 
-    // Pick export dimensions from the selected photo's native size, capped
-    // at 2560 longest side (MediaRecorder realtime budget). Output matches
-    // the photo's own aspect — no gradient letterbox bars on the sides.
+    // Pick export dimensions from the selected photo's native size. Cap depends
+    // on the animation mode: per-pixel filters (liquid / smoke / chromatic /
+    // particle / pixelhd / aiscan) are CPU-bound and can't keep 30fps at high
+    // resolution — the recorder ends up with sparse frames spread across
+    // wall-clock time, which plays back as stutter. Cheaper modes (flow,
+    // glitch, shuffle, reveal, off) tolerate 2560 fine.
+    const HEAVY_ANIM = new Set(['liquid','smoke','chromatic','particle','pixelhd','aiscan']);
+    const MAX_REC_LOOP = HEAVY_ANIM.has(animMode) ? 1280 : 2560;
     const dispW = photoLayer.width, dispH = photoLayer.height;
     let pw, ph;
     {
       const target = _pickExportSize();
       if(target){
         pw = target.w; ph = target.h;
-        const MAX_REC_LOOP = 2560;
         const longestLoop = Math.max(pw, ph);
         if(longestLoop > MAX_REC_LOOP){
           const k = MAX_REC_LOOP / longestLoop;
@@ -5264,8 +5268,8 @@
           ph = Math.round(ph * k);
         }
       } else {
-        pw = Math.min(2560, dispW * 2);
-        ph = Math.min(2560, dispH * 2);
+        pw = Math.min(MAX_REC_LOOP, dispW * 2);
+        ph = Math.min(MAX_REC_LOOP, dispH * 2);
       }
     }
 
