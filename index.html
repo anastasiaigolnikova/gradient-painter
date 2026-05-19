@@ -1859,9 +1859,17 @@
           else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='echo'){
-            // For SVG, source bitmap is the gl canvas itself, placed fullsize
+            // For SVG-only mode, the source IS the whole gl canvas. If we
+            // passed full canvas dims to renderEcho, every copy would cover
+            // the entire visible area and the front copy would completely
+            // occlude the receding ones — user sees one image, no echo.
+            // Treat the gl canvas as a half-size "virtual photo" centred on
+            // the canvas, so copies fan out into the right side visibly.
             animCtx.clearRect(0, 0, pw, ph);
-            renderEcho(animCtx, canvas, 0, 0, pw, ph, size, detail, invert, pw, ph);
+            const echoW = pw * 0.5, echoH = ph * 0.5;
+            const echoX = (pw - echoW) * 0.5;
+            const echoY = (ph - echoH) * 0.5;
+            renderEcho(animCtx, canvas, echoX, echoY, echoW, echoH, size, detail, invert, pw, ph);
           } else if(pattern==='edgeStretch'){
             animCtx.clearRect(0, 0, pw, ph);
             animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
