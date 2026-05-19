@@ -4493,6 +4493,13 @@
     const value = $('#patternSelect').value;
     if(!p && !svgLoaded) return;
     saveState();
+    // Safety: clear any transient export flags that might have stuck
+    // (e.g. if a previous recording threw partway through and finally
+    // missed something). Without this, the next render path can still
+    // think it's mid-export and skip rendering or use stale canvases.
+    _skipPhotoLayerSync = false;
+    isRecording = false;
+    _recordingActive = false;
     showPhotoSelection = false; isDraggingPhoto = false; isResizingPhoto = false;
     const photoUi = document.getElementById('photoUi'); if(photoUi) photoUi.style.display = 'none';
     if(p) p.pattern = value;
