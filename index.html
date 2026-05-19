@@ -4393,15 +4393,16 @@
     ctx.globalAlpha = 1;
   }
 
-  // Edge stretch (liquid border): one-sided horizontal taffy-pull. Pixels on
-  // one side of centre get smeared toward that edge of the frame, like the
-  // melted-chrome model reference. Centre face stays sharp; the further the
-  // pixel from centre, the longer the trail.
-  // SIZE → max stretch distance as fraction of image width (default = 30 %,
-  //        max = 150 %). Very visible even at low settings.
-  // STRENGTH → where the stretch begins. Low = stretch starts at right edge
-  //            (subtle), high = stretch starts near centre (whole right half
-  //            melts).
+  // Edge stretch (liquid border): one-sided horizontal taffy-pull with
+  // Simplex-noise modulation so the result is wavy ribbons / chrome tendrils
+  // — not the flat uniform shear of the previous version. The reference look
+  // (melted-chrome model) has different "islands" of stretch with curling
+  // strands rather than a uniform smear; we get that via:
+  //   1. per-row STRETCH AMPLITUDE variation (some rows pull more, some less)
+  //   2. per-pixel VERTICAL wobble in the source sample (creates curl/wave)
+  //   3. per-pixel HORIZONTAL noise on the stretch length (breaks up uniformity)
+  // SIZE → max stretch distance as fraction of width
+  // STRENGTH → safe-zone size (lower = stretch covers more of frame)
   // INVERT → stretch toward the left edge instead of right
   function renderEdgeStretch(ctx, w, h, size, detail, invert){
     const data = ctx.getImageData(0, 0, w, h).data;
@@ -4409,26 +4410,33 @@
     const out = buf.out;
     out.fill(0);
     const detailFactor = (detail - 10) / 80;
-    // safeZone in normalised x (-1..+1). Higher STRENGTH → lower safeZone →
-    // stretch covers more of the frame.
-    const safeZone = 0.6 - detailFactor * 0.8; // 0.6 → -0.2
-    const maxStretchPx = (size / 100) * 1.5 * w; // up to 1.5× width
+    const safeZone = 0.6 - detailFactor * 0.8;
+    const maxStretchPx = (size / 100) * 1.5 * w;
     const dir = invert ? -1 : 1;
+    const n2 = _simplex.noise2D;
     for(let y = 0; y < h; y++){
+      // Per-row flow strength — creates clusters / islands of stretch rather
+      // than a uniform pull across all rows.
+      const rowFlow = 0.5 + 0.5 * n2(y * 0.008, 200);
       for(let x = 0; x < w; x++){
         const di = (y * w + x) * 4;
-        const xNorm = (x - w / 2) * 2 / w; // -1..+1
-        const sideX = xNorm * dir;          // positive on the stretching side
+        const xNorm = (x - w / 2) * 2 / w;
+        const sideX = xNorm * dir;
         let falloff = 0;
         if(sideX > safeZone){
           falloff = (sideX - safeZone) / Math.max(0.001, 1 - safeZone);
-          falloff = falloff * falloff; // ease-in
+          falloff = falloff * falloff;
         }
-        const stretchPx = falloff * maxStretchPx;
-        // Pull colour from a position CLOSER to centre → image content
-        // gets visually stretched toward the active edge.
+        // Local noise modulation of stretch length — strand-by-strand variation
+        const stretchNoise = 0.65 + 0.35 * n2(x * 0.003, y * 0.012 + 50);
+        const stretchPx = falloff * maxStretchPx * rowFlow * stretchNoise;
+        // Vertical wobble proportional to stretch: longer strands curl more,
+        // shorter strands stay near-horizontal. This is what turns the flat
+        // smear into chrome ribbons.
+        const wobble = n2(x * 0.0035, y * 0.018) * stretchPx * 0.45;
         const sx = Math.max(0, Math.min(w - 1, (x - dir * stretchPx) | 0));
-        const si = (y * w + sx) * 4;
+        const sy = Math.max(0, Math.min(h - 1, (y + wobble) | 0));
+        const si = (sy * w + sx) * 4;
         out[di]     = data[si];
         out[di + 1] = data[si + 1];
         out[di + 2] = data[si + 2];
