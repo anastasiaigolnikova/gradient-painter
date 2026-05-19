@@ -1915,7 +1915,12 @@
           } else if(pattern==='edgeStretch'){
             animCtx.clearRect(0, 0, pw, ph);
             animCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
-            renderEdgeStretch(animCtx, pw, ph, size, detail, invert);
+            // SVG-only path has no real photo subject — the entire animCtx is
+            // gradient. Without this flag, the subject-aware erase inside
+            // would treat any near-white gradient pixel as background and
+            // wipe it transparent, leaving the canvas blank for light
+            // gradients.
+            renderEdgeStretch(animCtx, pw, ph, size, detail, invert, /*svgOnly*/ true);
           }
 
           if(filtersAnimated){
@@ -4362,7 +4367,7 @@
   // SIZE → max stretch distance as fraction of width
   // STRENGTH → safe-zone size (lower = stretch covers more of frame)
   // INVERT → stretch toward the left edge instead of right
-  function renderEdgeStretch(ctx, w, h, size, detail, invert){
+  function renderEdgeStretch(ctx, w, h, size, detail, invert, svgOnly){
     const data = ctx.getImageData(0, 0, w, h).data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
@@ -4403,7 +4408,10 @@
         // shows through the strand gaps. Only SUBJECT pixels (non-white,
         // non-transparent) flow into the strand region.
         // For pixels in the safe zone (falloff ≈ 0), pass through unchanged.
-        if(falloff > 0.02){
+        // SVG-only path: the whole canvas is gradient and there's no real
+        // "background" to detect — skip the erase or light gradients turn
+        // transparent and wipe the strand region.
+        if(!svgOnly && falloff > 0.02){
           const isBg = sa < 30 || (sr > 240 && sg > 240 && sb > 240);
           if(isBg){
             // Sample was background — leave this pixel transparent
