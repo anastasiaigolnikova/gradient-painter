@@ -2014,9 +2014,11 @@
       // stretch, duotone, ink lines) are pure pixel passes with no
       // shuffle-able elements, so we grey Shuffle out for them.
       const SHUFFLE_OK = ['dots','displace','weave','shapes','ascii','gradient','dispersion'];
-      // Reveal re-renders the filter at scaledSize via its own switch in
-      // effectReveal — only patterns wired into that switch oscillate.
-      const REVEAL_OK = ['dots','displace','weave','shapes','ascii','gradient','dispersion','duotone','edge'];
+      // Reveal oscillates each pattern's SIZE 30%↔100% and re-renders. Only
+      // filters whose VISUAL changes with SIZE actually animate — duotone
+      // (luma→gradient lookup) and edge (Sobel threshold) ignore SIZE so
+      // their oscillation is invisible.
+      const REVEAL_OK = ['dots','displace','weave','shapes','ascii','gradient','dispersion'];
       const opts = modeSel.querySelectorAll('option');
       opts.forEach(opt => {
         if(!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
