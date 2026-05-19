@@ -326,7 +326,7 @@
     </div>
 
     <div class="section-sub" id="exportHeading" style="display:none;margin:18px 0 6px">EXPORT</div>
-    <button id="download" class="btn-download"><span id="downloadLabel">DOWNLOAD PNG</span></button>
+    <button id="download" class="btn-download" style="display:none"><span id="downloadLabel">DOWNLOAD PNG</span></button>
     <button id="download10" class="btn-download" style="display:none;margin-top:8px"><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
     <button id="manualRec" class="btn-download" style="display:none;margin-top:8px"><span id="manualRecLabel">● RECORD LIVE (15S MAX)</span></button>
 
@@ -760,11 +760,21 @@
     }
 
     // Restore the photos array and global animation / filter state. Dispose
-    // any photo (esp. video) that's no longer present in the snapshot so we
-    // don't leak blob URLs / running video elements.
+    // any video photo that's no longer present in the snapshot. Compare by
+    // videoUrl, not by object identity — snapshot entries are shallow
+    // clones (saveState uses Object.assign({}, p)) so they share `video` +
+    // `videoUrl` with the live entry; identity Set.has would always miss,
+    // causing every undo to pause + revokeObjectURL on a live video and
+    // permanently freeze playback.
     if (Array.isArray(prevState.photosSnapshot)) {
-      const keep = new Set(prevState.photosSnapshot);
-      photos.forEach(p => { if (!keep.has(p)) disposePhoto(p); });
+      const keepUrls = new Set(
+        prevState.photosSnapshot
+          .filter(s => s && s.isVideo && s.videoUrl)
+          .map(s => s.videoUrl)
+      );
+      photos.forEach(p => {
+        if (p && p.isVideo && p.videoUrl && !keepUrls.has(p.videoUrl)) disposePhoto(p);
+      });
       photos.length = 0;
       prevState.photosSnapshot.forEach(p => photos.push(p));
       selectedIndex = typeof prevState.selectedIndex === 'number' ? prevState.selectedIndex : (photos.length ? 0 : -1);
@@ -784,6 +794,7 @@
     }
     if (typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
     if (typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
+    if (typeof updateFilterSlidersState === 'function') updateFilterSlidersState();
     // Sync the animation sliders back to the restored values
     const sv = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = String(v); };
     sv('animMode', animMode);
@@ -933,6 +944,7 @@
 
     if(typeof syncAnimControlsForPattern === 'function') syncAnimControlsForPattern();
     if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
+    if(typeof updateFilterSlidersState === 'function') updateFilterSlidersState();
 
     // Re-render with cleared filter/animation
     renderPhotomaker();
@@ -2085,6 +2097,7 @@
         }
       }
       if(typeof updateAnimSlidersState === 'function') updateAnimSlidersState();
+      if(typeof updateFilterSlidersState === 'function') updateFilterSlidersState();
     } else {
       // No content at all: hide controls and disable any running animation
       animContainer.style.display = 'none';
@@ -3235,12 +3248,6 @@
   
   // Custom animation for Halftone (dots) inspired by Pixeldance/Inscript
   function applyDotsAnimation(destCtx, sourceCanvas, w, h, t, tSec){
-    // DEBUG: Always log when this function is called
-    if(!window._applyDotsCounter) window._applyDotsCounter = 0;
-    window._applyDotsCounter++;
-    if(window._applyDotsCounter % 60 === 0){
-      console.log('🔵 applyDotsAnimation called! animMode =', animMode);
-    }
     
     const imgData = animCtx.getImageData(0, 0, w, h);
     const data = imgData.data;
@@ -4522,6 +4529,15 @@
     const p = getSelectedPhoto();
     const value = $('#patternSelect').value;
     if(!p && !svgLoaded) return;
+    // If an export is in flight, the encoder loop has photoLayer sized to
+    // the export dims and _skipPhotoLayerSync pinned. A pattern change here
+    // would clear that flag and the next renderPhotomaker would resize
+    // photoLayer back to display dims mid-encode → corrupted frames.
+    if(isAnyExportBusy()){
+      const sel = $('#patternSelect');
+      if(sel) sel.value = (p ? (p.pattern || 'none') : (svgPattern || 'none'));
+      return;
+    }
     saveState();
     // Safety: clear any transient export flags that might have stuck
     // (e.g. if a previous recording threw partway through and finally
@@ -4577,6 +4593,21 @@
   //  - If there's a video in photos → "DOWNLOAD VIDEO" (full-length capture)
   //  - Else if filter animation is on → "RECORD VIDEO (5S)" (synthetic-time loop)
   //  - Else → hidden
+  function isAnyExportBusy(){
+    const ids = ['download','download10','manualRec','exportVideo'];
+    for(const id of ids){
+      const b = document.getElementById(id);
+      if(b && b.dataset.busy === '1') return true;
+    }
+    return false;
+  }
+  function lockControlsForExport(on){
+    const ids = ['patternSelect','animMode'];
+    for(const id of ids){
+      const el = document.getElementById(id);
+      if(el) el.disabled = !!on;
+    }
+  }
   function updateExportButton(){
     // The DOWNLOAD button adapts its label based on what's on canvas
     // (video / animated photo / static photo). The 10S sibling appears
@@ -4585,9 +4616,15 @@
     // reached via #download.
     const hasVideo = photos.some(p => p.isVideo);
     const hasContent = photos.length > 0 || svgLoaded;
+    // Hide DOWNLOAD / EXPORT heading when no content — otherwise the button
+    // sits live, says "DOWNLOAD PNG", and silently no-ops on click (no
+    // photos.length & no svgLoaded → _pickExportSize returns null).
     const dlBtn = document.getElementById('download');
     const dlLbl = document.getElementById('downloadLabel');
     const dl10  = document.getElementById('download10');
+    if(dlBtn){
+      dlBtn.style.display = hasContent ? 'block' : 'none';
+    }
     if(dlLbl && dlBtn && dlBtn.dataset.busy !== '1'){
       if(hasVideo){
         dlLbl.textContent = 'DOWNLOAD VIDEO (5S CLIP)';
@@ -4674,6 +4711,42 @@
       }
     });
   }
+  // Per-filter slider relevance — same dim pattern as anim sliders. SIZE is
+  // a no-op for Duotone (pure luma→gradient lookup) and Ink lines (Sobel +
+  // fixed 1-px kernel); STRENGTH is meaningful for every current filter.
+  // For pattern='none' nothing renders so both stay enabled (it's clearer
+  // to leave them looking live than to wholesale grey out the section).
+  const FILTER_SLIDER_MAP = {
+    none:       { size: true,  strength: true  },
+    dots:       { size: true,  strength: true  },
+    displace:   { size: true,  strength: true  },
+    weave:      { size: true,  strength: true  },
+    shapes:     { size: true,  strength: true  },
+    ascii:      { size: true,  strength: true  },
+    gradient:   { size: true,  strength: true  },
+    dispersion: { size: true,  strength: true  },
+    duotone:    { size: false, strength: true  },
+    edge:       { size: false, strength: true  },
+    echo:       { size: true,  strength: true  },
+    edgeStretch:{ size: true,  strength: true  }
+  };
+  function updateFilterSlidersState(){
+    const p = getSelectedPhoto();
+    const pat = p ? (p.pattern || 'none') : (svgLoaded ? (svgPattern || 'none') : 'none');
+    const cfg = FILTER_SLIDER_MAP[pat] || FILTER_SLIDER_MAP.none;
+    const pairs = [['patternSize', cfg.size], ['detailLevel', cfg.strength]];
+    pairs.forEach(([id, on]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.disabled = !on;
+      const wrap = el.closest('label.range');
+      if(wrap) wrap.classList.toggle('disabled', !on);
+      const lab = wrap && wrap.previousElementSibling;
+      if(lab && lab.classList && lab.classList.contains('lab')){
+        lab.classList.toggle('disabled', !on);
+      }
+    });
+  }
 
   $('#animMode')?.addEventListener('change', ()=>{
     saveState();
@@ -4691,6 +4764,7 @@
   });
   // Initial state — animMode starts as 'off' so SPEED/AMP/FREQ should be greyed
   updateAnimSlidersState();
+  updateFilterSlidersState();
   $('#animAmp')?.addEventListener('input', (e)=>{ snapOnFirstInput('animAmp'); animAmp = parseFloat(e.target.value||'0.3')||0.3; if(filtersAnimated) ensureTickFilters(); });
   $('#animAmp')?.addEventListener('change', ()=> endSliderDrag('animAmp'));
   $('#animFreq')?.addEventListener('input', (e)=>{ snapOnFirstInput('animFreq'); animFreq = parseFloat(e.target.value||'1.2')||1.2; if(filtersAnimated) ensureTickFilters(); });
@@ -4809,10 +4883,13 @@
       const Mp4Muxer = window.Mp4Muxer;
       if(!Mp4Muxer || !Mp4Muxer.Muxer) throw new Error('mp4-muxer not loaded');
 
-      // Try H.264 first (best player support); fall back to VP9 if the
-      // browser's WebCodecs implementation doesn't expose any H.264 profile.
+      // H.264 only. We previously fell back to VP9-in-MP4 here, but
+      // QuickTime / Premiere / Discord / most consumer players can't decode
+      // VP9 wrapped in MP4 even though mp4-muxer happily writes it — users
+      // got files with a generic icon that wouldn't open. Throw instead so
+      // the caller falls back to the MediaRecorder path, which produces a
+      // valid .webm (VP9-in-WebM) any browser-era player handles.
       const avcCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
-      const vp9Candidates = ['vp09.00.10.08', 'vp09.00.50.08'];
       let chosen = null;
       for(const codec of avcCandidates){
         try {
@@ -4822,15 +4899,7 @@
           if(s && s.supported){ chosen = { codec, container: 'avc', cfg: { codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' } } }; break; }
         } catch(_){}
       }
-      if(!chosen){
-        for(const codec of vp9Candidates){
-          try {
-            const s = await VideoEncoder.isConfigSupported({ codec, width: pw, height: ph, bitrate, framerate: fps });
-            if(s && s.supported){ chosen = { codec, container: 'vp9', cfg: { codec, width: pw, height: ph, bitrate, framerate: fps } }; break; }
-          } catch(_){}
-        }
-      }
-      if(!chosen) throw new Error('No supported video codec (tried H.264 + VP9)');
+      if(!chosen) throw new Error('No supported H.264 codec — falling back to MediaRecorder');
 
       muxer = new Mp4Muxer.Muxer({
         target: new Mp4Muxer.ArrayBufferTarget(),
@@ -5055,7 +5124,7 @@
       btn.disabled = false;
       lbl.textContent = origText;
       updateExportButton();
-      return exportFullVideo(p, btn);
+      return exportFullVideo(p, btn, maxDurationMs);
     }
 
     try {
@@ -5557,6 +5626,11 @@
         pw = Math.min(MAX_REC_LOOP, dispW * 2);
         ph = Math.min(MAX_REC_LOOP, dispH * 2);
       }
+      // Force even dims — same reason as in the WebCodecs path: H.264 +
+      // some Safari MediaRecorder profiles refuse odd width/height and
+      // either fail to start or write a 1-px-skewed file.
+      pw -= pw % 2;
+      ph -= ph % 2;
     }
 
     // Swap photoLayer / animCanvas / offscreen to the export size — same
@@ -5816,6 +5890,11 @@
       compW = Math.round(compW * k);
       compH = Math.round(compH * k);
     }
+    // H.264 (and Safari's MediaRecorder profiles) reject odd dimensions.
+    // Round each to the nearest even value or some players write a partial
+    // file with a 1-px aspect skew.
+    compW -= compW % 2;
+    compH -= compH % 2;
 
     // Composite canvas at output dims — refreshed every RAF tick.
     const comp = document.createElement('canvas');
@@ -5889,7 +5968,7 @@
     if(_manualRecRAF != null){ cancelAnimationFrame(_manualRecRAF); _manualRecRAF = null; }
     try { _manualRec.stop(); } catch(_) {}
     const lbl = document.getElementById('manualRecLabel');
-    if(lbl) lbl.textContent = '● RECORD LIVE';
+    if(lbl) lbl.textContent = '● RECORD LIVE (15S MAX)';
   }
 
   $('#manualRec')?.addEventListener('click', ()=>{
