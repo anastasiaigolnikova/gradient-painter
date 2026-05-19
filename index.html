@@ -246,7 +246,7 @@
         </span>
       </label>
 
-      <button class="btn btn-undo">
+      <button class="btn btn-undo" title="Step back one change — filter, animation, slider drag or brush stroke. Shortcut: Ctrl/⌘+Z.">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
           <path d="M9 7L4 12L9 17"/>
           <path d="M20 12H5"/>
@@ -254,7 +254,7 @@
         UNDO
       </button>
 
-      <button id="clear" class="btn" style="width:100%">
+      <button id="clear" class="btn" style="width:100%" title="Clear filters, animation and brush strokes. Keeps the loaded photo / SVG — press Delete or Backspace to drop the media itself.">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
           <path d="M6 6l12 12M18 6L6 18"/>
         </svg>
@@ -326,9 +326,9 @@
     </div>
 
     <div class="section-sub" id="exportHeading" style="display:none;margin:18px 0 6px">EXPORT</div>
-    <button id="download" class="btn-download" style="display:none"><span id="downloadLabel">DOWNLOAD PNG</span></button>
-    <button id="download10" class="btn-download" style="display:none;margin-top:8px"><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
-    <button id="manualRec" class="btn-download" style="display:none;margin-top:8px"><span id="manualRecLabel">● RECORD LIVE (15S MAX)</span></button>
+    <button id="download" class="btn-download" style="display:none" title="High-resolution PNG of the current canvas (for static photos / SVG) or a 5-second MP4 loop (when animation is on)."><span id="downloadLabel">DOWNLOAD PNG</span></button>
+    <button id="download10" class="btn-download" style="display:none;margin-top:8px" title="Same as the 5-second export, but renders a 10-second loop / cut."><span id="download10Label">DOWNLOAD MP4 (10S)</span></button>
+    <button id="manualRec" class="btn-download" style="display:none;margin-top:8px" title="Records whatever is on canvas in real time (up to 15 s). Use this for clips longer than 10 s or when you want to drag sliders mid-recording."><span id="manualRecLabel">● RECORD LIVE (15S MAX)</span></button>
 
     <a class="brand-link" href="https://holisticbrandlab.com/" target="_blank" rel="noopener" aria-label="Holistic Brand Lab" title="holisticbrandlab.com">
       <svg viewBox="0 0 7150 725" xmlns="http://www.w3.org/2000/svg">
@@ -351,7 +351,7 @@
       </svg>
     </a>
   </div>
-  <div id="stage"><canvas id="gl"></canvas><div id="emptyHint">UPLOAD A PHOTO, VIDEO, OR SVG TO BEGIN</div><div id="photoUi"><button id="applyPhoto" class="btn-apply">APPLY</button></div></div>
+  <div id="stage"><canvas id="gl"></canvas><div id="emptyHint">UPLOAD A PHOTO, VIDEO, OR SVG TO BEGIN</div><div id="photoUi"><button id="applyPhoto" class="btn-apply" title="Lock the current photo crop / position so filters render against this framing">APPLY</button></div></div>
 </div>
 
 <script>
@@ -4950,6 +4950,11 @@
         if(lbl) lbl.textContent = 'ENCODING ' + Math.floor((i + 1) / totalFrames * 100) + '%';
       }
 
+      // If error fired after the last frame was queued but before we ran
+      // flush, flush may still resolve cleanly on some browsers and we'd
+      // muxer-finalize a partial bitstream → a tiny corrupted file that
+      // passes the 4 KB sanity check. Catch it here before flush.
+      if(encoderError) throw encoderError;
       if(lbl) lbl.textContent = 'FINALIZING…';
       await encoder.flush();
       if(encoderError) throw encoderError;
@@ -5717,7 +5722,10 @@
         _skipPhotoLayerSync = origSkipSync;
         renderPhotomaker();
       };
+      let recStopFired = false;
       videoRecorder.onstop = ()=>{
+        recStopFired = true;
+        if(recStopWatchdog){ clearTimeout(recStopWatchdog); recStopWatchdog = null; }
         const blob = new Blob(videoChunks, {type: 'application/octet-stream'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -5732,6 +5740,24 @@
         btn.disabled = false;
         restoreCanvases();
         updateExportButton();
+      };
+      // Watchdog: if onstop never fires (Safari edge case, recorder.stop()
+      // throws silently, or capture track shuts down without emitting stop),
+      // the live UI would be stuck on the swapped hi-res canvas with the
+      // download button frozen. Free the user after 3s of silence.
+      let recStopWatchdog = null;
+      const armRecStopWatchdog = ()=>{
+        if(recStopWatchdog) clearTimeout(recStopWatchdog);
+        recStopWatchdog = setTimeout(()=>{
+          if(recStopFired) return;
+          console.warn('MediaRecorder onstop never fired — restoring UI manually');
+          try { videoRecorder.ondataavailable = null; videoRecorder.onstop = null; } catch(_){}
+          if(lbl) lbl.textContent = origText;
+          btn.dataset.busy = '';
+          btn.disabled = false;
+          restoreCanvases();
+          updateExportButton();
+        }, 3000);
       };
       
       // Start recording with data chunks every 100ms for stability
@@ -5758,6 +5784,7 @@
           isRecording = false;
           setTimeout(()=>{
             try { videoRecorder.stop(); } catch(_){}
+            armRecStopWatchdog();
             if(lbl) lbl.textContent = origText;
             const elapsedReal = performance.now() - startTime;
             console.log(`Recording complete: ${elapsedReal.toFixed(0)}ms wall, ${frameCount} frames captured, using ${mimeType}`);
