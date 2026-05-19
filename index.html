@@ -4085,26 +4085,57 @@
     ctx.putImageData(buf.img, 0, 0);
   }
 
-  // Echo (multiply): stamp N copies of the source bitmap onto ctx with a
-  // horizontal offset and optional fake 3D-rotation around the vertical axis.
-  // SIZE  → number of copies (3..14)
-  // STRENGTH → rotation per step around Y-axis (0 = pure horizontal echo,
-  //            high = spiral / receding into perspective like image 1)
-  // INVERT → mirror echo direction (right → left)
-  // Drawn back-to-front so foreground copies occlude receding ones.
+  // Echo (multiply): stamp N copies of the source bitmap onto ctx.
+  // Two modes:
+  //   - external (default): copies extend outward from the photo position
+  //     with horizontal offset + perspective spiral. Best for isolated
+  //     subjects (transparent BG, SVG, cut-outs).
+  //   - internal (INVERT=true): copies stay INSIDE the original frame,
+  //     each one progressively smaller and rotated, so the effect works on
+  //     full-frame photos where extending copies would just duplicate the
+  //     background. Nested fan / receding-into-frame look.
+  // SIZE → number of copies (3..14)
+  // STRENGTH → rotation per step (0 = subtle, high = dramatic spiral)
   function renderEcho(ctx, src, srcX, srcY, srcW, srcH, size, detail, invert, pw, ph){
     const count = Math.max(3, Math.min(14, Math.round((size - 3) / 97 * 11) + 3));
     const detailFactor = (detail - 10) / 80; // 0..1
-    const dir = invert ? -1 : 1;
-    // Horizontal step distance scales with photo width and slightly with STRENGTH
-    const stepDist = srcW * 0.18 * (0.55 + detailFactor * 0.9);
-    // Fake Y-axis rotation per step → X-compression (perspective receding)
-    const stepRotY = detailFactor * 0.45;
     const cx = srcX + srcW * 0.5;
     const cy = srcY + srcH * 0.5;
+
+    if(invert){
+      // INTERNAL mode: nested copies fanning inside the frame. Each copy
+      // scales down by 'scaleStep' per step and rotates by 'angStep' radians;
+      // all stay within the original photo bounds. Works on full-frame
+      // photos because nothing extends past the frame.
+      const scaleStep = 0.85 - detailFactor * 0.15;          // 0.85..0.70
+      const angStep   = (0.12 + detailFactor * 0.45);         // radians per step
+      // Slight diagonal offset keeps copies visible (not perfectly stacked)
+      const offStep   = srcW * 0.04 * (0.5 + detailFactor);
+      for(let i = count - 1; i >= 0; i--){
+        const t = count > 1 ? i / (count - 1) : 0;            // 0=front
+        const scale = Math.pow(scaleStep, i);
+        const ang   = angStep * i;
+        const ox    = Math.cos(ang) * offStep * i;
+        const oy    = Math.sin(ang) * offStep * i;
+        const alpha = 1 - t * 0.5;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(cx + ox, cy + oy);
+        ctx.rotate(ang * 0.3);
+        ctx.scale(scale, scale);
+        ctx.drawImage(src, -srcW * 0.5, -srcH * 0.5, srcW, srcH);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // EXTERNAL mode (default): horizontal echo with perspective receding
+    const stepDist = srcW * 0.18 * (0.55 + detailFactor * 0.9);
+    const stepRotY = detailFactor * 0.45;
     for(let i = count - 1; i >= 0; i--){
-      const t = count > 1 ? i / (count - 1) : 0; // 0=front, 1=back
-      const dx = dir * i * stepDist;
+      const t = count > 1 ? i / (count - 1) : 0;
+      const dx = i * stepDist;
       const alpha = 1 - t * 0.55;
       const scale = 1 - t * 0.22;
       const rotY = stepRotY * i;
@@ -4119,23 +4150,27 @@
     ctx.globalAlpha = 1;
   }
 
-  // Edge stretch (liquid border): displaces pixels radially outward from
-  // centre, with the displacement amount ramping up from 0 in a safe inner
-  // zone to a maximum at the corners. Centre stays clean, edges smear.
+  // Edge stretch (liquid border): pixels near the edges get TRAILS extending
+  // toward the frame edge (image content smeared outward like melted chrome).
+  // Centre stays untouched. Inverse sampling: a target pixel near the edge
+  // pulls colour from a point CLOSER to the centre, so inner content gets
+  // visually stretched along the radial direction.
   // SIZE → maximum stretch distance (5..150 px)
-  // STRENGTH → falloff start (higher = smaller safe zone, more stretch reach)
-  // INVERT → pull inward instead of pushing outward
+  // STRENGTH → falloff curve (higher = smaller safe zone, deeper stretch reach)
+  // INVERT → pull edge content INTO the centre instead of outward
   function renderEdgeStretch(ctx, w, h, size, detail, invert){
     const imgData = ctx.getImageData(0, 0, w, h);
     const data = imgData.data;
     const buf = _pxBuffers(w, h);
     const out = buf.out;
-    // Reset output to fully transparent — the displacement loop writes to it
     out.fill(0);
     const detailFactor = (detail - 10) / 80;
     const safeZone = 0.65 - detailFactor * 0.45; // 0.20..0.65 of half-diagonal
-    const maxStretch = size * 1.5; // ~5..150 px
-    const dirSign = invert ? -1 : 1;
+    const maxStretch = size * 1.5;
+    // Default: source is CLOSER to centre (sampleSign = -1) → outer pixels
+    // borrow from inner content → content stretches outward toward the edge.
+    // Invert flips it.
+    const sampleSign = invert ? +1 : -1;
     const cx = w / 2, cy = h / 2;
     const maxDist = Math.sqrt(cx * cx + cy * cy);
     for(let y = 0; y < h; y++){
@@ -4149,8 +4184,7 @@
           falloff = (dist - safeZone) / Math.max(0.001, 1 - safeZone);
           falloff = falloff * falloff; // ease-in
         }
-        const stretchAmt = falloff * maxStretch * dirSign;
-        // Radial direction: pull pixel from a position further out (or in)
+        const stretchAmt = falloff * maxStretch * sampleSign;
         const angle = Math.atan2(dy, dx);
         const sx = Math.max(0, Math.min(w - 1, (x + Math.cos(angle) * stretchAmt) | 0));
         const sy = Math.max(0, Math.min(h - 1, (y + Math.sin(angle) * stretchAmt) | 0));
