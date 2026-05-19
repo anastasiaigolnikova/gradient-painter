@@ -4688,6 +4688,11 @@
         pw = Math.round(pw * k);
         ph = Math.round(ph * k);
       }
+      // H.264 requires even width AND height — odd dimensions get rejected by
+      // VideoEncoder.isConfigSupported (returns supported:false). Photos with
+      // odd native pixel counts would otherwise fail the encode setup.
+      if(pw % 2) pw -= 1;
+      if(ph % 2) ph -= 1;
     }
 
     // Save live-display state
@@ -4737,9 +4742,33 @@
     try {
       const Mp4Muxer = window.Mp4Muxer;
       if(!Mp4Muxer || !Mp4Muxer.Muxer) throw new Error('mp4-muxer not loaded');
+
+      // Try H.264 first (best player support); fall back to VP9 if the
+      // browser's WebCodecs implementation doesn't expose any H.264 profile.
+      const avcCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
+      const vp9Candidates = ['vp09.00.10.08', 'vp09.00.50.08'];
+      let chosen = null;
+      for(const codec of avcCandidates){
+        try {
+          const s = await VideoEncoder.isConfigSupported({
+            codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' }
+          });
+          if(s && s.supported){ chosen = { codec, container: 'avc', cfg: { codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' } } }; break; }
+        } catch(_){}
+      }
+      if(!chosen){
+        for(const codec of vp9Candidates){
+          try {
+            const s = await VideoEncoder.isConfigSupported({ codec, width: pw, height: ph, bitrate, framerate: fps });
+            if(s && s.supported){ chosen = { codec, container: 'vp9', cfg: { codec, width: pw, height: ph, bitrate, framerate: fps } }; break; }
+          } catch(_){}
+        }
+      }
+      if(!chosen) throw new Error('No supported video codec (tried H.264 + VP9)');
+
       muxer = new Mp4Muxer.Muxer({
         target: new Mp4Muxer.ArrayBufferTarget(),
-        video: { codec: 'avc', width: pw, height: ph },
+        video: { codec: chosen.container, width: pw, height: ph },
         firstTimestampBehavior: 'offset',
         fastStart: 'in-memory'
       });
@@ -4749,21 +4778,7 @@
         output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
         error: (e) => { encoderError = e; console.error('VideoEncoder error:', e); }
       });
-
-      const codecCandidates = ['avc1.640028', 'avc1.4D401E', 'avc1.42E01E'];
-      let configured = false;
-      for(const codec of codecCandidates){
-        try {
-          const support = await VideoEncoder.isConfigSupported({
-            codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' }
-          });
-          if(support && support.supported){
-            encoder.configure({ codec, width: pw, height: ph, bitrate, framerate: fps, avc: { format: 'avc' } });
-            configured = true; break;
-          }
-        } catch(_){}
-      }
-      if(!configured) throw new Error('No supported H.264 codec');
+      encoder.configure(chosen.cfg);
 
       const keyframeEvery = Math.max(30, fps * 2);
       for(let i = 0; i < totalFrames; i++){
