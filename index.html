@@ -2558,8 +2558,11 @@
         const x = c * blockSize, y = r * blockSize;
         const bw = Math.min(blockSize, w - x), bh = Math.min(blockSize, h - y);
         if(active){
-          destCtx.fillStyle = '#000';
-          destCtx.fillRect(x, y, bw, bh);
+          // No black fill here — for filters that render black-on-transparent
+          // (Signs / Dots / Lines / Ascii) the source's transparent pixels
+          // need to let the gradient layer underneath show through. Filling
+          // black first would make the whole active cell black, hiding both
+          // the filter content AND the gradient.
           destCtx.globalAlpha = alpha;
           destCtx.drawImage(sourceCanvas, x, y, bw, bh, x, y, bw, bh);
           destCtx.globalAlpha = 1;
