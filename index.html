@@ -256,7 +256,6 @@
         <option value="edge">Ink lines (edge detect)</option>
         <option value="echo">Echo (multiply)</option>
         <option value="edgeStretch">Edge stretch (liquid border)</option>
-        <option value="haze">Haze (light streak veil)</option>
       </select>
 
       <label class="lab">SIZE<span class="val" id="patternSizeVal">20</span></label>
@@ -1758,7 +1757,6 @@
           else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
-          else if(pattern==='haze') renderHaze(animCtx, srcImageData, size, detail, pw, ph, invert);
           else if(pattern==='echo'){
             // For SVG, source bitmap is the gl canvas itself, placed fullsize
             animCtx.clearRect(0, 0, pw, ph);
@@ -1856,8 +1854,7 @@
         else if(pattern==='dispersion') renderDispersion(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='duotone') renderDuotone(animCtx, srcImageData, size, detail, pw, ph, invert);
         else if(pattern==='edge') renderEdge(animCtx, srcImageData, size, detail, pw, ph, invert);
-        else if(pattern==='haze') renderHaze(animCtx, srcImageData, size, detail, pw, ph, invert);
-        
+
         // Apply universal animation post-processing
         if(filtersAnimated){
           applyAnimationEffect(photoCtx, animCanvas, pw, ph, t, tSec);
@@ -2151,7 +2148,6 @@
       case 'dispersion': renderDispersion(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'duotone':    renderDuotone(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       case 'edge':       renderEdge(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
-      case 'haze':       renderHaze(tctx, srcImageData, scaledSize, detail, w, h, invert); break;
       default:
         destCtx.drawImage(sourceCanvas, 0, 0);
         return;
@@ -4129,101 +4125,6 @@
       }
     }
     ctx.putImageData(out, 0, 0);
-  }
-
-  // Haze (light streak veil): vertical motion blur of the photo, then mixed
-  // back via a LOCALISED STRIP MASK (Simplex along X) so only certain
-  // vertical columns become streaks — "светящиеся столбы" passing through
-  // the figure, with the image between them untouched. Bottom-heavy by
-  // default (figure dissolves into light below); INVERT flips top↔bottom.
-  // Works regardless of subject/background contrast because we add an
-  // explicit warm-glow boost in the streak columns.
-  //   SIZE → streak length (longer = dreamier trails)
-  //   STRENGTH → how much of the image gets veiled (density of strips)
-  //   INVERT → streaks on top half instead of bottom
-  function renderHaze(ctx, imgData, size, detail, w, h, invert){
-    const data = imgData.data;
-    const buf = _pxBuffers(w, h);
-    const out = buf.out;
-    const streak = Math.max(40, Math.floor(size * h / 25));
-    const detailFactor = (detail - 10) / 80;
-    const density = 0.45 + detailFactor * 0.6;
-    const n2 = _simplex.noise2D;
-
-    // 1. Vertical motion blur of the WHOLE image (not just bright pixels) so
-    //    every column has a dreamy blurred version available, regardless of
-    //    photo contrast.
-    const haze = new Uint8ClampedArray(data.length);
-    for(let x = 0; x < w; x++){
-      let sR = 0, sG = 0, sB = 0, count = 0;
-      for(let y = 0; y < Math.min(streak, h); y++){
-        const i = (y * w + x) * 4;
-        sR += data[i]; sG += data[i+1]; sB += data[i+2];
-        count++;
-      }
-      for(let y = 0; y < h; y++){
-        const add = y + streak;
-        if(add < h){
-          const ai = (add * w + x) * 4;
-          sR += data[ai]; sG += data[ai+1]; sB += data[ai+2];
-          count++;
-        }
-        const rem = y - streak - 1;
-        if(rem >= 0){
-          const ri = (rem * w + x) * 4;
-          sR -= data[ri]; sG -= data[ri+1]; sB -= data[ri+2];
-          count--;
-        }
-        const di = (y * w + x) * 4;
-        const c = count > 0 ? count : 1;
-        haze[di]     = sR / c;
-        haze[di + 1] = sG / c;
-        haze[di + 2] = sB / c;
-      }
-    }
-
-    // 2. Composite — strip mask + vertical mask + warm boost. The strip
-    //    mask makes streaks LOCAL (visible columns of light) rather than a
-    //    uniform horizontal blur. Powered (^1.6) so peaks dominate and we
-    //    actually see distinct streaks instead of a smooth gradient.
-    for(let y = 0; y < h; y++){
-      let vMask = y / Math.max(1, h - 1);
-      if(invert) vMask = 1 - vMask;
-      vMask = vMask * vMask; // ease-in
-      for(let x = 0; x < w; x++){
-        const i = (y * w + x) * 4;
-        if(data[i + 3] === 0){ out[i + 3] = 0; continue; }
-        // X-strip mask — some columns get strong streaks, others stay clear.
-        // Two frequencies overlaid so we get both wide cathedral-light
-        // bands AND finer subjacent strands within them.
-        const xStripWide = (n2(x * 0.004, 100) + 1) * 0.5;
-        const xStripFine = (n2(x * 0.018, 350) + 1) * 0.5;
-        const xStrip = Math.pow(xStripWide * 0.7 + xStripFine * 0.3, 1.6);
-        const mix = density * vMask * (0.2 + xStrip * 1.1);
-        const m = mix > 1 ? 1 : mix;
-        const inv = 1 - m;
-        // Warm-boosted haze: lifts brightness + amber cast specifically on
-        // the streak columns so they're visible even on bright photos.
-        const hr = Math.min(255, haze[i]     * 1.35 + 50);
-        const hg = Math.min(255, haze[i + 1] * 1.25 + 35);
-        const hb = Math.min(255, haze[i + 2] * 1.05 + 10);
-        let r = data[i]     * inv + hr * m;
-        let g = data[i + 1] * inv + hg * m;
-        let b = data[i + 2] * inv + hb * m;
-        // LIGHTEN clamp — streak can only brighten, never darken the original
-        if(r < data[i])     r = data[i];
-        if(g < data[i + 1]) g = data[i + 1];
-        if(b < data[i + 2]) b = data[i + 2];
-        if(r > 255) r = 255;
-        if(g > 255) g = 255;
-        if(b > 255) b = 255;
-        out[i]     = r;
-        out[i + 1] = g;
-        out[i + 2] = b;
-        out[i + 3] = data[i + 3];
-      }
-    }
-    ctx.putImageData(buf.img, 0, 0);
   }
 
   // Echo (multiply): stamp N copies of the source bitmap onto ctx.
