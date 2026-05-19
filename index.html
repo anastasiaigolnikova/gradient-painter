@@ -4410,14 +4410,20 @@
     const out = buf.out;
     out.fill(0);
     const detailFactor = (detail - 10) / 80;
-    const safeZone = 0.6 - detailFactor * 0.8;
-    const maxStretchPx = (size / 100) * 1.5 * w;
+    // Safe zone is CAPPED at 0 so the left half (face area) can never get
+    // distorted — STRENGTH only controls how much of the right half melts.
+    // detail=10 → safeZone 0.6 (only right 20% melts)
+    // detail=50 → safeZone 0.25 (right 37% melts)
+    // detail=90 → safeZone 0 (the whole right half melts, left untouched)
+    const safeZone = Math.max(0, 0.6 - detailFactor * 0.7);
+    const maxStretchPx = (size / 100) * 2.0 * w; // up to 2× width for chrome reach
     const dir = invert ? -1 : 1;
     const n2 = _simplex.noise2D;
     for(let y = 0; y < h; y++){
-      // Per-row flow strength — creates clusters / islands of stretch rather
-      // than a uniform pull across all rows.
-      const rowFlow = 0.5 + 0.5 * n2(y * 0.008, 200);
+      // Per-row flow strength — clusters of stronger / weaker pull (the
+      // "islands" feel) but consistent ALONG each strand so ribbons stay
+      // continuous from start to end.
+      const rowFlow = 0.6 + 0.4 * n2(y * 0.005, 200);
       for(let x = 0; x < w; x++){
         const di = (y * w + x) * 4;
         const xNorm = (x - w / 2) * 2 / w;
@@ -4427,13 +4433,14 @@
           falloff = (sideX - safeZone) / Math.max(0.001, 1 - safeZone);
           falloff = falloff * falloff;
         }
-        // Local noise modulation of stretch length — strand-by-strand variation
-        const stretchNoise = 0.65 + 0.35 * n2(x * 0.003, y * 0.012 + 50);
-        const stretchPx = falloff * maxStretchPx * rowFlow * stretchNoise;
-        // Vertical wobble proportional to stretch: longer strands curl more,
-        // shorter strands stay near-horizontal. This is what turns the flat
-        // smear into chrome ribbons.
-        const wobble = n2(x * 0.0035, y * 0.018) * stretchPx * 0.45;
+        // No per-pixel length jitter — strands stay coherent along their
+        // length, just rowFlow varies the AMPLITUDE per row.
+        const stretchPx = falloff * maxStretchPx * rowFlow;
+        // Low-frequency wobble (longer, smoother undulation) instead of
+        // high-frequency jitter — gives flowing chrome-ribbon curves rather
+        // than zigzag noise. The (y) freq is much lower than the (x) freq so
+        // each strand keeps a consistent curl direction rather than jumping.
+        const wobble = n2(x * 0.0012, y * 0.006) * stretchPx * 0.55;
         const sx = Math.max(0, Math.min(w - 1, (x - dir * stretchPx) | 0));
         const sy = Math.max(0, Math.min(h - 1, (y + wobble) | 0));
         const si = (sy * w + sx) * 4;
