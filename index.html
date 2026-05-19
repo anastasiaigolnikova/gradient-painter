@@ -4829,7 +4829,9 @@
       setTimeout(()=> URL.revokeObjectURL(url), 2000);
     } catch(err){
       console.error('Photo loop WebCodecs error:', err);
-      alert('Ошибка записи: ' + (err && err.message ? err.message : err));
+      // Re-throw so the caller (runVideoExport) can fall back to the
+      // MediaRecorder path. Don't alert here — caller decides UX.
+      throw err;
     } finally {
       try { if(encoder && encoder.state !== 'closed') encoder.close(); } catch(_){}
       photos.forEach((p, i) => {
@@ -5436,13 +5438,19 @@
 
     // Prefer offline WebCodecs path — frames get explicit timestamps so heavy
     // filters (Smoke, Liquid, …) play back at proper 30 fps regardless of how
-    // long each render takes. MediaRecorder realtime path is the fallback for
-    // browsers without WebCodecs (older Safari / Firefox).
+    // long each render takes. If WebCodecs fails for any reason (broken
+    // codec config, muxer error, etc.), fall through to the MediaRecorder
+    // realtime path below so the user still gets a file.
     {
       const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
       const hasMuxer = typeof window.Mp4Muxer !== 'undefined' && window.Mp4Muxer.Muxer;
       if(hasWebCodecs && hasMuxer){
-        return exportPhotoLoopWebCodecs(durationMs, btn, lbl);
+        try {
+          const ok = await exportPhotoLoopWebCodecs(durationMs, btn, lbl);
+          if(ok !== false) return;
+        } catch(err){
+          console.error('WebCodecs export failed, falling back to MediaRecorder:', err);
+        }
       }
     }
 
