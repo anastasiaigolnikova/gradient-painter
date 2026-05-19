@@ -4777,7 +4777,13 @@
         cctx.fillStyle = '#000'; cctx.fillRect(0, 0, pw, ph);
         cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, pw, ph);
         cctx.drawImage(photoLayer, 0, 0);
-        const frame = new VideoFrame(comp, { timestamp: i * frameDurUs });
+        // Both timestamp AND duration are needed — without duration the muxer
+        // can't compute the stts table correctly and players show stutter
+        // even though the timestamps are evenly spaced.
+        const frame = new VideoFrame(comp, {
+          timestamp: i * frameDurUs,
+          duration: frameDurUs
+        });
         const keyFrame = (i % keyframeEvery) === 0;
         encoder.encode(frame, { keyFrame });
         frame.close();
