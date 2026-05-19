@@ -956,48 +956,47 @@
     exportHighResPNG();
   };
 
-  // High-res PNG export. Temporarily swaps photoLayer/animCanvas/offscreen
-  // for HiDPI versions, scales per-photo SIZE so filter density matches
-  // the on-screen look, renders one frame, composites gl-gradient + filter,
-  // saves as PNG. Same swap-and-restore pattern as the WebCodecs video
-  // export — keeps the live display state intact.
-  async function exportHighResPNG(){
-    // Pick a target resolution: aim for the largest of (display × 2, photo
-    // native), capped at 3840 longest side. Aspect ratio matches the
-    // current canvas so filters / composition look identical, just sharper.
-    const dispW = photoLayer.width, dispH = photoLayer.height;
-    if(!dispW || !dispH){
-      alert('Сначала загрузи фото / видео / SVG');
-      return;
+  // Pick export dimensions from the primary content (selected photo's native
+  // size, capped at 3840 longest side). Output therefore matches the photo's
+  // own aspect ratio — no display-shaped letterbox with gradient bars on the
+  // sides, just "photo + effect" sized to its native pixels.
+  function _pickExportSize(){
+    const sel = getSelectedPhoto() || photos[0];
+    let tw = 0, th = 0;
+    if(sel){
+      const s = getPhotoSize(sel);
+      tw = s.w; th = s.h;
+    } else if(svgLoaded){
+      // SVG only — no native source; fall back to display aspect, 2×.
+      tw = canvas.width * 2; th = canvas.height * 2;
     }
-    let nativeW = 0, nativeH = 0;
-    for(const p of photos){
-      const s = getPhotoSize(p);
-      if(s.w > nativeW) nativeW = s.w;
-      if(s.h > nativeH) nativeH = s.h;
-    }
-    const aspect = dispW / dispH;
-    let targetW = Math.max(dispW * 2, nativeW * 1.2);
-    let targetH = Math.max(dispH * 2, nativeH * 1.2);
-    // Force aspect-ratio of canvas so composite layout matches preview
-    if(targetW / targetH > aspect) targetW = Math.round(targetH * aspect);
-    else targetH = Math.round(targetW / aspect);
+    if(!tw || !th) return null;
     const MAX = 3840;
-    const longest = Math.max(targetW, targetH);
-    if(longest > MAX){
-      const k = MAX / longest;
-      targetW = Math.round(targetW * k);
-      targetH = Math.round(targetH * k);
-    }
+    const longest = Math.max(tw, th);
+    if(longest > MAX){ const k = MAX / longest; tw = Math.round(tw * k); th = Math.round(th * k); }
+    return { w: tw, h: th };
+  }
 
-    // Save live-display state
+  // High-res PNG export. Saves the photo at its NATIVE aspect & dimensions
+  // (capped at 3840) with the filter baked in, so no gradient letterbox bars.
+  // Uses swap-and-restore on photoLayer / animCanvas / offscreen and resets
+  // each photo's scale / offset to 0,0,1 so the photo fills the export canvas
+  // exactly — the live UI state is unchanged.
+  async function exportHighResPNG(){
+    const dispW = photoLayer.width, dispH = photoLayer.height;
+    const target = _pickExportSize();
+    if(!target){ alert('Сначала загрузи фото / видео / SVG'); return; }
+    const targetW = target.w, targetH = target.h;
+
     const origPhotoLayer = photoLayer, origPhotoCtx = photoCtx;
     const origAnim = animCanvas, origAnimCtx = animCtx;
     const origOff = offscreen, origOffctx = offctx;
     const origSizes = photos.map(p => p.size);
+    const origScales = photos.map(p => p.scale);
+    const origOX = photos.map(p => p.offsetX);
+    const origOY = photos.map(p => p.offsetY);
     const origSkipSync = _skipPhotoLayerSync;
 
-    // Hi-res replacements
     photoLayer = document.createElement('canvas');
     photoLayer.width = targetW; photoLayer.height = targetH;
     photoCtx = photoLayer.getContext('2d', { alpha: true, willReadFrequently: true });
@@ -1008,22 +1007,24 @@
     offscreen.width = targetW; offscreen.height = targetH;
     offctx = offscreen.getContext('2d', { alpha: false, willReadFrequently: true });
 
-    // Scale per-photo filter SIZE so dot / line / ascii density looks the
-    // same as on screen, not 2× tinier on the bigger canvas.
+    // Scale filter SIZE so dot / line / ascii density at the photo's native
+    // resolution still looks like what was on screen, not tinier.
     const sizeScale = Math.max(targetW / dispW, targetH / dispH);
-    photos.forEach(p => { if(typeof p.size === 'number') p.size = p.size * sizeScale; });
+    photos.forEach(p => {
+      if(typeof p.size === 'number') p.size = p.size * sizeScale;
+      // Reset framing so the photo fills the export canvas exactly
+      p.scale = 1; p.offsetX = 0; p.offsetY = 0;
+    });
 
     _skipPhotoLayerSync = true;
     try {
       renderPhotomaker();
-
-      // Composite gl-gradient (scale up from display size with bilinear) +
-      // hi-res photo layer into a final canvas, encode as PNG.
       const comp = document.createElement('canvas');
       comp.width = targetW; comp.height = targetH;
       const cctx = comp.getContext('2d', { alpha: false });
       cctx.imageSmoothingEnabled = true;
       cctx.imageSmoothingQuality = 'high';
+      // Gl gradient stretched to target dims, then hi-res photo layer on top.
       cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, targetW, targetH);
       cctx.drawImage(photoLayer, 0, 0);
       await new Promise((res)=> comp.toBlob((blob)=>{
@@ -1037,7 +1038,12 @@
         res();
       }, 'image/png'));
     } finally {
-      photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+      photos.forEach((p, i) => {
+        if(typeof origSizes[i] === 'number') p.size = origSizes[i];
+        if(typeof origScales[i] === 'number') p.scale = origScales[i];
+        if(typeof origOX[i] === 'number') p.offsetX = origOX[i];
+        if(typeof origOY[i] === 'number') p.offsetY = origOY[i];
+      });
       photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
       animCanvas = origAnim; animCtx = origAnimCtx;
       offscreen = origOff; offctx = origOffctx;
@@ -5231,36 +5237,38 @@
     btn.dataset.busy = '1';
     btn.disabled = true;
 
-    // Pick a hi-res target so the exported MP4 isn't capped at the user's
-    // display resolution. 2× display, biased toward photo native, capped at
-    // 2560 longest side (MediaRecorder realtime budget).
+    // Pick export dimensions from the selected photo's native size, capped
+    // at 2560 longest side (MediaRecorder realtime budget). Output matches
+    // the photo's own aspect — no gradient letterbox bars on the sides.
     const dispW = photoLayer.width, dispH = photoLayer.height;
-    let nativeW = 0, nativeH = 0;
-    for(const p of photos){
-      const s = getPhotoSize(p);
-      if(s.w > nativeW) nativeW = s.w;
-      if(s.h > nativeH) nativeH = s.h;
-    }
-    let pw = Math.max(dispW * 2, nativeW);
-    let ph = Math.max(dispH * 2, nativeH);
-    const aspect = dispW / Math.max(1, dispH);
-    if(pw / ph > aspect) pw = Math.round(ph * aspect);
-    else ph = Math.round(pw / aspect);
-    const MAX_REC_LOOP = 2560;
-    const longestLoop = Math.max(pw, ph);
-    if(longestLoop > MAX_REC_LOOP){
-      const k = MAX_REC_LOOP / longestLoop;
-      pw = Math.round(pw * k);
-      ph = Math.round(ph * k);
+    let pw, ph;
+    {
+      const target = _pickExportSize();
+      if(target){
+        pw = target.w; ph = target.h;
+        const MAX_REC_LOOP = 2560;
+        const longestLoop = Math.max(pw, ph);
+        if(longestLoop > MAX_REC_LOOP){
+          const k = MAX_REC_LOOP / longestLoop;
+          pw = Math.round(pw * k);
+          ph = Math.round(ph * k);
+        }
+      } else {
+        pw = Math.min(2560, dispW * 2);
+        ph = Math.min(2560, dispH * 2);
+      }
     }
 
-    // Swap photoLayer / animCanvas / offscreen to hi-res — same pattern the
-    // WebCodecs video export uses. Render pipeline rewrites itself at the
-    // bigger size for the duration of the recording.
+    // Swap photoLayer / animCanvas / offscreen to the export size — same
+    // pattern the WebCodecs video export uses. The render pipeline rewrites
+    // itself at the new size for the duration of the recording.
     const origPhotoLayer = photoLayer, origPhotoCtx = photoCtx;
     const origAnim = animCanvas, origAnimCtx = animCtx;
     const origOff = offscreen, origOffctx = offctx;
     const origSizes = photos.map(p => p.size);
+    const origScales = photos.map(p => p.scale);
+    const origOX = photos.map(p => p.offsetX);
+    const origOY = photos.map(p => p.offsetY);
     const origSkipSync = _skipPhotoLayerSync;
 
     const hiPhotoLayer = document.createElement('canvas');
@@ -5277,7 +5285,11 @@
     animCanvas = hiAnim; animCtx = hiAnimCtx;
     offscreen = hiOff; offctx = hiOffctx;
     const sizeScale = Math.max(pw / dispW, ph / dispH);
-    photos.forEach(p => { if(typeof p.size === 'number') p.size = p.size * sizeScale; });
+    photos.forEach(p => {
+      if(typeof p.size === 'number') p.size = p.size * sizeScale;
+      // Reset framing so the photo fills the export canvas exactly
+      p.scale = 1; p.offsetX = 0; p.offsetY = 0;
+    });
     _skipPhotoLayerSync = true;
 
     try {
@@ -5319,7 +5331,12 @@
       videoRecorder.ondataavailable = (e)=> { if(e.data && e.data.size>0) videoChunks.push(e.data); };
       const restoreCanvases = ()=>{
         // Restore live-display state — runs after recording finishes OR on error
-        photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+        photos.forEach((p, i) => {
+          if(typeof origSizes[i] === 'number') p.size = origSizes[i];
+          if(typeof origScales[i] === 'number') p.scale = origScales[i];
+          if(typeof origOX[i] === 'number') p.offsetX = origOX[i];
+          if(typeof origOY[i] === 'number') p.offsetY = origOY[i];
+        });
         photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
         animCanvas = origAnim; animCtx = origAnimCtx;
         offscreen = origOff; offctx = origOffctx;
@@ -5422,7 +5439,12 @@
       btn.disabled = false;
       // Restore canvases on error path too — otherwise the user is left with
       // a partial swap and the live UI shows the hi-res canvas frozen.
-      photos.forEach((p, i) => { if(typeof origSizes[i] === 'number') p.size = origSizes[i]; });
+      photos.forEach((p, i) => {
+        if(typeof origSizes[i] === 'number') p.size = origSizes[i];
+        if(typeof origScales[i] === 'number') p.scale = origScales[i];
+        if(typeof origOX[i] === 'number') p.offsetX = origOX[i];
+        if(typeof origOY[i] === 'number') p.offsetY = origOY[i];
+      });
       photoLayer = origPhotoLayer; photoCtx = origPhotoCtx;
       animCanvas = origAnim; animCtx = origAnimCtx;
       offscreen = origOff; offctx = origOffctx;
