@@ -4672,25 +4672,29 @@
     btn.dataset.busy = '1';
     btn.disabled = true;
 
-    // Pick export resolution from selected photo's native size. WebCodecs is
-    // offline so per-frame budget doesn't matter; cap at 2560 just to keep
-    // total encode time and file size reasonable.
+    // Pick export resolution from the selected photo's native size. Even
+    // though WebCodecs is offline, each FRAME render still costs CPU — at
+    // 2560 longest side with Smoke / Liquid / Chromatic / Particle a 10s
+    // loop takes a minute+. Cap aggressively:
+    //   heavy per-pixel filters → 1280 (good for social, fast encode)
+    //   everything else → 1920 (Full HD; matches Instagram / Reels upload cap)
+    // Social platforms re-encode uploads to 1080p anyway, so chasing 2560 was
+    // pure encode-time burn with no visible benefit.
+    const HEAVY_ANIM = new Set(['liquid','smoke','chromatic','particle','pixelhd','aiscan']);
+    const OFFLINE_CAP = HEAVY_ANIM.has(animMode) ? 1280 : 1920;
     const dispW = photoLayer.width, dispH = photoLayer.height;
     let pw, ph;
     {
       const target = _pickExportSize();
       if(target){ pw = target.w; ph = target.h; }
       else { pw = dispW * 2; ph = dispH * 2; }
-      const OFFLINE_CAP = 2560;
       const longest = Math.max(pw, ph);
       if(longest > OFFLINE_CAP){
         const k = OFFLINE_CAP / longest;
         pw = Math.round(pw * k);
         ph = Math.round(ph * k);
       }
-      // H.264 requires even width AND height — odd dimensions get rejected by
-      // VideoEncoder.isConfigSupported (returns supported:false). Photos with
-      // odd native pixel counts would otherwise fail the encode setup.
+      // H.264 needs both dimensions even — odd values fail isConfigSupported.
       if(pw % 2) pw -= 1;
       if(ph % 2) ph -= 1;
     }
