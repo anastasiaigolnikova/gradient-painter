@@ -286,6 +286,8 @@
           <option value="aiscan">AI Scan</option>
           <option value="shuffle">Shuffle</option>
           <option value="reveal">Build / Reveal</option>
+          <option value="pulse">Pulse (BPM beat)</option>
+          <option value="bloom">Bloom (edge glow)</option>
         </select>
         <label class="lab">SPEED<span class="val" id="animSpeedVal">1.0</span></label>
         <label class="range"><input id="animSpeed" type="range" min="0.2" max="5" step="0.1" value="1"/></label>
@@ -2004,7 +2006,8 @@
     // Modern universal effects — work on top of ANY filter (or plain photo)
     if(animMode === 'liquid' || animMode === 'smoke' || animMode === 'glitch' ||
        animMode === 'chromatic' || animMode === 'pixelate' || animMode === 'particle' ||
-       animMode === 'pixelhd' || animMode === 'aiscan' || animMode === 'reveal'){
+       animMode === 'pixelhd' || animMode === 'aiscan' || animMode === 'reveal' ||
+       animMode === 'pulse' || animMode === 'bloom'){
       applyModernEffect(destCtx, sourceCanvas, w, h, t, tSec, animMode);
       return;
     }
@@ -2070,6 +2073,8 @@
     if(mode === 'pixelhd')   return effectPixelHD(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'aiscan')    return effectAIScan(destCtx, sourceCanvas, w, h, t, tSec);
     if(mode === 'reveal')    return effectReveal(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'pulse')     return effectPulse(destCtx, sourceCanvas, w, h, t, tSec);
+    if(mode === 'bloom')     return effectBloom(destCtx, sourceCanvas, w, h, t, tSec);
     destCtx.drawImage(sourceCanvas, 0, 0);
   }
 
@@ -2478,6 +2483,114 @@
     nextId: 431,
     frame: 0
   };
+
+  // Pulse: kinetic-typography beat. Scales the source around a centre point
+  // with a sharp attack / slow-release envelope tied to a BPM. Snaps on the
+  // beat, eases off — what Reels/TikTok use for "drop" moments. A camera move
+  // (scale) instead of pixel displacement.
+  // SIZE → unused (kept for slider visibility)
+  // STRENGTH (FREQUENCY) → BPM: 50..200 bpm via animFreq 0.5..3 scaled
+  // AMPLITUDE → pump depth (0 = no pulse, 1 = ±20 % scale)
+  function effectPulse(destCtx, sourceCanvas, w, h, t, tSec){
+    destCtx.clearRect(0, 0, w, h);
+    // animFreq 0.5..3 maps to ~50..200 BPM. period (sec) = 60/bpm.
+    const bpm = 30 + animFreq * 50; // 50..180 BPM
+    const period = 60 / bpm;
+    const speed = Math.max(0.2, animSpeed);
+    const phase = ((tSec * speed) % period) / period; // 0..1 within beat
+    // Attack: 0..0.18 sharp rise; release: rest, slow ease back to baseline
+    let env;
+    if(phase < 0.18){
+      env = phase / 0.18; // 0..1 fast
+    } else {
+      const r = (phase - 0.18) / 0.82; // 0..1 slow
+      env = 1 - r * r * r; // ease-out cubic decay
+    }
+    // Pump depth: AMP scales how aggressive the beat is
+    const pumpDepth = 0.05 + animAmp * 0.18; // ±5 % to ±23 %
+    const scale = 1 + env * pumpDepth;
+    destCtx.save();
+    destCtx.translate(w / 2, h / 2);
+    destCtx.scale(scale, scale);
+    destCtx.drawImage(sourceCanvas, -w / 2, -h / 2, w, h);
+    destCtx.restore();
+  }
+
+  // Bloom: edge-aware silhouette glow. Sobel pass picks high-gradient pixels
+  // (subject outline) → tinted bright copy of those edges → drawImage with a
+  // wide blur via filter → additive over the original. Lifts the subject's
+  // contour without distorting interior — ethereal portrait aesthetic.
+  // SIZE → bloom radius
+  // STRENGTH → edge threshold (higher = cleaner / fewer edges)
+  // AMPLITUDE → glow intensity
+  // FREQUENCY → slow brightness pulse on the bloom layer
+  function effectBloom(destCtx, sourceCanvas, w, h, t, tSec){
+    destCtx.clearRect(0, 0, w, h);
+    destCtx.drawImage(sourceCanvas, 0, 0); // base layer
+
+    if(!window._bloomTmp){
+      window._bloomTmp = document.createElement('canvas');
+      window._bloomTmpCtx = window._bloomTmp.getContext('2d', { alpha: true });
+    }
+    const tmp = window._bloomTmp;
+    if(tmp.width !== w) tmp.width = w;
+    if(tmp.height !== h) tmp.height = h;
+    const tctx = window._bloomTmpCtx;
+    tctx.globalCompositeOperation = 'source-over';
+    tctx.clearRect(0, 0, w, h);
+
+    // Cheap edge map: read source, Sobel, write bright pixels into tmp
+    let srcData;
+    try { srcData = animCtx.getImageData(0, 0, w, h); }
+    catch(_){ return; }
+    const data = srcData.data;
+    const luma = new Uint8ClampedArray(w * h);
+    for(let i=0, j=0; i<data.length; i+=4, j++){
+      luma[j] = (data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114) | 0;
+    }
+    const detailFactor = (animFreq - 0.5) / 2.5; // 0..1 from animFreq
+    const threshold = 30 + detailFactor * 80;
+    const edge = tctx.createImageData(w, h);
+    const ed = edge.data;
+    for(let y=1; y<h-1; y++){
+      for(let x=1; x<w-1; x++){
+        const i = y*w + x;
+        const tl = luma[i-w-1], tc = luma[i-w], tr = luma[i-w+1];
+        const ml = luma[i-1],                   mr = luma[i+1];
+        const bl = luma[i+w-1], bc = luma[i+w], br = luma[i+w+1];
+        const gx = -tl - 2*ml - bl + tr + 2*mr + br;
+        const gy = -tl - 2*tc - tr + bl + 2*bc + br;
+        const mag = Math.sqrt(gx*gx + gy*gy);
+        if(mag > threshold){
+          const di = i*4;
+          ed[di]     = 255;
+          ed[di+1]   = 240;
+          ed[di+2]   = 220;
+          ed[di+3]   = Math.min(255, (mag - threshold) * 2);
+        }
+      }
+    }
+    tctx.putImageData(edge, 0, 0);
+
+    // Pull a SIZE-driven blur radius. Canvas filter='blur(NN px)' is the
+    // simplest way to soft-bloom — works in Chrome/Safari/Firefox.
+    const sel = getSelectedPhoto();
+    const sizeSlider = sel ? (sel.size ?? 20) : 20;
+    const radius = Math.max(2, Math.min(60, sizeSlider * 0.6));
+    // Slow brightness pulse on the bloom layer
+    const speed = Math.max(0.2, animSpeed);
+    const pulse = 0.6 + 0.4 * (Math.sin(tSec * speed * 1.4) * 0.5 + 0.5);
+
+    destCtx.save();
+    destCtx.globalCompositeOperation = 'lighter';
+    destCtx.globalAlpha = Math.min(1, animAmp * 1.6 * pulse);
+    destCtx.filter = 'blur(' + radius + 'px)';
+    destCtx.drawImage(tmp, 0, 0);
+    destCtx.filter = 'none';
+    destCtx.globalAlpha = 1;
+    destCtx.globalCompositeOperation = 'source-over';
+    destCtx.restore();
+  }
 
   // AI Scan: raw machine-vision debug overlay drawn ON TOP of the live video/filter.
   // Tracking is purely motion-driven — candidates come from frame-differencing blocks,
@@ -4557,7 +4670,9 @@
     pixelhd:   { speed: true,  amp: false, freq: true  },
     aiscan:    { speed: true,  amp: true,  freq: true  },
     shuffle:   { speed: true,  amp: true,  freq: true  },
-    reveal:    { speed: true,  amp: false, freq: false }
+    reveal:    { speed: true,  amp: false, freq: false },
+    pulse:     { speed: true,  amp: true,  freq: true  },
+    bloom:     { speed: true,  amp: true,  freq: true  }
   };
   function updateAnimSlidersState(){
     const cfg = ANIM_SLIDER_MAP[animMode] || ANIM_SLIDER_MAP.off;
