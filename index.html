@@ -5486,9 +5486,40 @@
       return;
     }
 
-    // Composite canvas — refreshed every RAF tick with current gl + photoLayer
+    // Output dimensions = loaded media's native size (capped at 2560 longest
+    // side for live-record realtime budget). No display-aspect letterbox.
+    // Computed once at start; user changes to scale/offset mid-record won't
+    // shift the crop window — keeps the recorded framing predictable.
+    const sel = getSelectedPhoto() || photos[0];
+    let compW, compH, srcX = 0, srcY = 0, srcW = pw, srcH = ph, glSrcX = 0, glSrcY = 0, glSrcW = canvas.width, glSrcH = canvas.height;
+    if(sel){
+      const s = getPhotoSize(sel);
+      compW = s.w; compH = s.h;
+      // Bounding box of the photo on the live photoLayer (aspect-fit at scale=1)
+      const sFit = Math.min(pw / s.w, ph / s.h);
+      const bw = s.w * sFit, bh = s.h * sFit;
+      const bx = (pw - bw) / 2, by = (ph - bh) / 2;
+      srcX = bx; srcY = by; srcW = bw; srcH = bh;
+      // gl canvas may be at a different DPR — scale source rect to gl coords
+      const dpiX = canvas.width / pw, dpiY = canvas.height / ph;
+      glSrcX = bx * dpiX; glSrcY = by * dpiY;
+      glSrcW = bw * dpiX; glSrcH = bh * dpiY;
+    } else {
+      // SVG-only — use display dims (no native source)
+      compW = pw; compH = ph;
+    }
+    // Cap longest side at 2560 for realtime encoding budget
+    const MAX_REC_LIVE = 2560;
+    const longestLive = Math.max(compW, compH);
+    if(longestLive > MAX_REC_LIVE){
+      const k = MAX_REC_LIVE / longestLive;
+      compW = Math.round(compW * k);
+      compH = Math.round(compH * k);
+    }
+
+    // Composite canvas at output dims — refreshed every RAF tick.
     const comp = document.createElement('canvas');
-    comp.width = pw; comp.height = ph;
+    comp.width = compW; comp.height = compH;
     const cctx = comp.getContext('2d', { alpha: false });
     comp.style.cssText = 'position:fixed;left:-99999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
     document.body.appendChild(comp);
@@ -5501,11 +5532,7 @@
     else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')){ mimeType = 'video/webm;codecs=vp9'; fileExt = 'webm'; }
     else if(MediaRecorder.isTypeSupported('video/webm')){ mimeType = 'video/webm'; fileExt = 'webm'; }
 
-    // Live capture is at display resolution — we can't trivially re-render
-    // each frame at hi-res without breaking the live UI. So we lift the
-    // bitrate range so the recorded pixels are well-quantised and stay
-    // sharp under social-media re-encoding. 12-40 Mbps (was 8-20).
-    const bitrate = Math.max(12_000_000, Math.min(40_000_000, Math.round(pw * ph * 30 * 0.18)));
+    const bitrate = Math.max(12_000_000, Math.min(40_000_000, Math.round(compW * compH * 30 * 0.18)));
     const stream = comp.captureStream(30);
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
     const chunks = [];
@@ -5515,7 +5542,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `gradient-painter-live-${Date.now()}.${fileExt}`;
+      a.download = `gradient-painter-live-${compW}x${compH}-${Date.now()}.${fileExt}`;
       a.rel = 'noopener'; a.style.display = 'none';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 2000);
@@ -5526,12 +5553,14 @@
 
     function tick(){
       if(!_manualRec) return;
-      // Composite: black base, scaled WebGL gradient, photoLayer (filter + anim) on top
+      // Crop the photo bbox out of gl + photoLayer and scale into output dims.
       cctx.fillStyle = '#000';
-      cctx.fillRect(0, 0, comp.width, comp.height);
-      cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, comp.width, comp.height);
+      cctx.fillRect(0, 0, compW, compH);
+      // gl gradient — cropped to photo bbox, scaled to output
+      cctx.drawImage(canvas, glSrcX, glSrcY, glSrcW, glSrcH, 0, 0, compW, compH);
+      // photo / filter / animation layer — same crop
       if(photoLayer && photoLayer.width){
-        cctx.drawImage(photoLayer, 0, 0, photoLayer.width, photoLayer.height, 0, 0, comp.width, comp.height);
+        cctx.drawImage(photoLayer, srcX, srcY, srcW, srcH, 0, 0, compW, compH);
       }
       _manualRecRAF = requestAnimationFrame(tick);
     }
