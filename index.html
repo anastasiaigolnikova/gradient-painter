@@ -52,11 +52,15 @@
     .hex-row{display:flex;gap:14px;margin-bottom:8px}
     .hex-input{width:56px;height:22px;border:1px solid var(--b);background:transparent;color:var(--t);padding:0 6px;font:10px/22px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box;border-radius:2px}
     .hex-input:focus{outline:none;border-color:var(--b-hover)}
-    .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:6px;margin-bottom:10px}
-    /* Larger gap before ONE COLOUR so it visually reads as a separate
-       control, not just a 4th stop. Caption + hex sit above the swatch,
-       tight against it, so the trio reads top-down as a single unit. */
-    .color-all-block{width:196px;margin:22px 0 12px}
+    /* Tight row-gap glues each hex input to its swatch — they read as one
+       column (hex-on-top, colour-below). Less vertical space wasted before
+       MID POSITION, which conceptually belongs to the same gradient. */
+    .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:3px;margin-bottom:6px}
+    /* ONE COLOUR sits BELOW MID POSITION (since MID POSITION is a gradient
+       param and should stay grouped with the three stops). Big top margin
+       separates it visually from the gradient block above; small bottom
+       margin keeps caption + hex tight against the swatch. */
+    .color-all-block{width:196px;margin:18px 0 10px}
     /* Custom swatch: a span with a CSS background colour, sized to match the
        VISIBLE colour band of the top swatches (those have native ::-webkit-
        color-swatch chrome that renders the fill thinner than the host
@@ -211,6 +215,12 @@
       <input id="cMid" type="color" value="#E9F754"/>
       <input id="cBot" type="color" value="#000000"/>
     </div>
+
+    <label class="lab">MID POSITION<span class="val" id="midPosVal">0.50</span></label>
+    <label class="range">
+      <input id="midPos" type="range" min="0" max="1" step="0.001" value="0.5"/>
+    </label>
+
     <div class="color-all-block" title="Sets all three gradient stops at once">
       <div class="color-all-row">
         <span class="color-all-cap">ONE COLOUR</span>
@@ -221,11 +231,6 @@
         <input id="cAll" type="color" value="#EA489E" class="color-all-swatch" />
       </div>
     </div>
-
-    <label class="lab">MID POSITION<span class="val" id="midPosVal">0.50</span></label>
-    <label class="range">
-      <input id="midPos" type="range" min="0" max="1" step="0.001" value="0.5"/>
-    </label>
 
     <div class="checkbox-row">
       <input id="grain" type="checkbox" checked/>
