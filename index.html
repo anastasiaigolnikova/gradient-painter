@@ -53,15 +53,20 @@
     .hex-input{width:56px;height:22px;border:1px solid var(--b);background:transparent;color:var(--t);padding:0 6px;font:10px/22px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box;border-radius:2px}
     .hex-input:focus{outline:none;border-color:var(--b-hover)}
     .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:6px;margin-bottom:10px}
-    .color-all-block{width:196px;margin:0 0 12px}
-    /* Override #ui input[type="color"] {width:56px} from line 51 with a
-       higher-specificity selector — the swatch needs to span the row. */
-    /* Match the top swatches exactly — same selectors, only width differs.
-       Leaving ::-webkit-color-swatch-wrapper at its default keeps the same
-       inset / padding around the colour fill, so the visible colour band
-       reads the same thickness as the three stops above. */
-    #ui input[type="color"].color-all-swatch{appearance:none;-webkit-appearance:none;-moz-appearance:none;display:block;width:196px;height:20px;padding:0;border:0;background:none;border-radius:3px;cursor:pointer;box-sizing:border-box}
-    .color-all-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
+    /* Larger gap before ONE COLOUR so it visually reads as a separate
+       control, not just a 4th stop. Caption + hex sit above the swatch,
+       tight against it, so the trio reads top-down as a single unit. */
+    .color-all-block{width:196px;margin:22px 0 12px}
+    /* Custom swatch: a span with a CSS background colour, sized to match the
+       VISIBLE colour band of the top swatches (those have native ::-webkit-
+       color-swatch chrome that renders the fill thinner than the host
+       element). Width-dependent native rendering made it impossible to get
+       the same look with a real input[type=color] at 196 px, so we draw the
+       colour ourselves and put the trigger input on top, invisible. */
+    .color-all-trigger{position:relative;width:196px;height:20px;cursor:pointer}
+    .color-all-fill{position:absolute;inset:3px 1px;background:#EA489E;border-radius:2px;pointer-events:none}
+    #ui input[type="color"].color-all-swatch{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0;margin:0;background:transparent}
+    .color-all-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 4px}
     .color-all-cap{font:9px/14px 'Archivo',system-ui;letter-spacing:.12em;text-transform:uppercase;color:var(--t-mute);white-space:nowrap}
     .hex-input::placeholder{color:var(--t-mute)}
 
@@ -207,10 +212,13 @@
       <input id="cBot" type="color" value="#000000"/>
     </div>
     <div class="color-all-block" title="Sets all three gradient stops at once">
-      <input id="cAll" type="color" value="#EA489E" class="color-all-swatch" />
       <div class="color-all-row">
         <span class="color-all-cap">ONE COLOUR</span>
         <input id="hexAll" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
+      </div>
+      <div class="color-all-trigger">
+        <span id="cAllFill" class="color-all-fill"></span>
+        <input id="cAll" type="color" value="#EA489E" class="color-all-swatch" />
       </div>
     </div>
 
@@ -1156,10 +1164,13 @@
   // input listener on cAll that fans its value out to the other three.
   attachHexSync('hexAll','cAll');
   const _cAll = $('#cAll');
+  const _cAllFill = document.getElementById('cAllFill');
+  if(_cAllFill) _cAllFill.style.background = _cAll?.value || '#EA489E';
   if(_cAll){
     const propagate = ()=>{
       const v = _cAll.value;
       _snapColour('fillAll');
+      if(_cAllFill) _cAllFill.style.background = v;
       ['cTop','cMid','cBot'].forEach(id => {
         const el = $('#'+id);
         if(el) el.value = v;
