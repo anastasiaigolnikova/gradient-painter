@@ -56,10 +56,11 @@
     .color-all-block{width:196px;margin:0 0 12px}
     /* Override #ui input[type="color"] {width:56px} from line 51 with a
        higher-specificity selector — the swatch needs to span the row. */
+    /* Match the top swatches exactly — same selectors, only width differs.
+       Leaving ::-webkit-color-swatch-wrapper at its default keeps the same
+       inset / padding around the colour fill, so the visible colour band
+       reads the same thickness as the three stops above. */
     #ui input[type="color"].color-all-swatch{appearance:none;-webkit-appearance:none;-moz-appearance:none;display:block;width:196px;height:20px;padding:0;border:0;background:none;border-radius:3px;cursor:pointer;box-sizing:border-box}
-    .color-all-swatch::-webkit-color-swatch-wrapper{padding:0}
-    .color-all-swatch::-webkit-color-swatch{border:none;border-radius:1px}
-    .color-all-swatch::-moz-color-swatch{border:none;border-radius:1px}
     .color-all-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
     .color-all-cap{font:9px/14px 'Archivo',system-ui;letter-spacing:.12em;text-transform:uppercase;color:var(--t-mute);white-space:nowrap}
     .hex-input::placeholder{color:var(--t-mute)}
