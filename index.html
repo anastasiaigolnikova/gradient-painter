@@ -52,8 +52,16 @@
     .hex-row{display:flex;gap:14px;margin-bottom:8px}
     .hex-input{width:56px;height:22px;border:1px solid var(--b);background:transparent;color:var(--t);padding:0 6px;font:10px/22px 'Archivo',system-ui;text-transform:uppercase;box-sizing:border-box;border-radius:2px}
     .hex-input:focus{outline:none;border-color:var(--b-hover)}
-    .color-grid{display:grid;grid-template-columns:repeat(4,56px);column-gap:14px;row-gap:6px;margin-bottom:10px}
-    .color-cap{font:9px/14px 'Archivo',system-ui;letter-spacing:.12em;text-transform:uppercase;color:var(--t-mute);text-align:left;padding-left:2px}
+    .color-grid{display:grid;grid-template-columns:repeat(3,56px);column-gap:14px;row-gap:6px;margin-bottom:10px}
+    .color-all-block{width:196px;margin:0 0 12px}
+    /* Override #ui input[type="color"] {width:56px} from line 51 with a
+       higher-specificity selector — the swatch needs to span the row. */
+    #ui input[type="color"].color-all-swatch{display:block;width:196px;height:22px;padding:0;border:1px solid var(--b);background:transparent;border-radius:2px;cursor:pointer}
+    .color-all-swatch::-webkit-color-swatch-wrapper{padding:0}
+    .color-all-swatch::-webkit-color-swatch{border:none;border-radius:1px}
+    .color-all-swatch::-moz-color-swatch{border:none;border-radius:1px}
+    .color-all-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
+    .color-all-cap{font:9px/14px 'Archivo',system-ui;letter-spacing:.12em;text-transform:uppercase;color:var(--t-mute);white-space:nowrap}
     .hex-input::placeholder{color:var(--t-mute)}
 
     .checkbox-row{display:flex;align-items:center;gap:8px;margin:8px 0 12px;font-size:10px;letter-spacing:.1em;color:var(--t-mute)}
@@ -193,13 +201,16 @@
       <input id="hexTop" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
       <input id="hexMid" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
       <input id="hexBot" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
-      <input id="hexAll" class="hex-input" maxlength="7" placeholder="#RRGGBB" title="Sets all three gradient stops at once" />
       <input id="cTop" type="color" value="#EA489E"/>
       <input id="cMid" type="color" value="#E9F754"/>
       <input id="cBot" type="color" value="#000000"/>
-      <input id="cAll" type="color" value="#EA489E" title="Sets all three gradient stops at once" />
-      <span></span><span></span><span></span>
-      <span class="color-cap">ONE COLOUR</span>
+    </div>
+    <div class="color-all-block" title="Sets all three gradient stops at once">
+      <input id="cAll" type="color" value="#EA489E" class="color-all-swatch" />
+      <div class="color-all-row">
+        <span class="color-all-cap">ONE COLOUR</span>
+        <input id="hexAll" class="hex-input" maxlength="7" placeholder="#RRGGBB" />
+      </div>
     </div>
 
     <label class="lab">MID POSITION<span class="val" id="midPosVal">0.50</span></label>
